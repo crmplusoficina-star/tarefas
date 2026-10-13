@@ -16,6 +16,7 @@ import { clamp01, damp, dampAngle, easeOutBack } from './math'
 import { ProgressRing } from './ProgressRing'
 import type { QualityProfile } from './quality'
 import { anchor, forgetAnchor, runtime } from './runtime'
+import { LinkLines } from './LinkLines'
 import { orbitFragment, orbitVertex } from './shaders/misc'
 
 const URGENCY_COLOR = ['#000000', '#ffd36b', '#ffa247', '#ff5a4a']
@@ -67,7 +68,6 @@ interface SatProps {
   center: string
   quality: QualityProfile
   mats: Mats
-  group: { current: Group | null }
   /** 0..1 how much of the system is shown (fades while flying elsewhere) */
   presence: { current: number }
 }
@@ -330,14 +330,13 @@ export function SatelliteSystem({ groupId, tasks, quality, centerKey }: { groupI
       {tasks.map((t) => {
         const slot = layout.slots.get(t.id)
         if (!slot) return null
-        return <Satellite key={t.id} task={t} slot={slot} bandTilt={BAND_TILT[slot.band]} center={centerKey} quality={quality} mats={mats} group={dummy} presence={presence.current} />
+        return <Satellite key={t.id} task={t} slot={slot} bandTilt={BAND_TILT[slot.band]} center={centerKey} quality={quality} mats={mats} presence={presence.current} />
       })}
       <LinkLinesGate pairs={pairs} presence={presence.current} />
     </group>
   )
 }
 
-import { LinkLines } from './LinkLines'
 function LinkLinesGate({ pairs, presence }: { pairs: [string, string][]; presence: { current: number } }) {
   const level = useStore(uiStore, (s) => levelOf(s))
   return <LinkLines pairs={pairs} opacity={() => presence.current * (level === 'task' ? 0.9 : 0.75)} />

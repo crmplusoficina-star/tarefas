@@ -10,6 +10,9 @@ export interface OrbitView {
   ready: boolean
 }
 
+/** The formation chamber lives far from the star so the lab never overlaps the universe. */
+export const LAB_STAGE = new Vector3(150, 6, -120)
+
 export const runtime = {
   /** wall clock (s) – shader time */
   time: 0,

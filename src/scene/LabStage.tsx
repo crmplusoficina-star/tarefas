@@ -9,7 +9,7 @@ import { damp } from './math'
 import { makeCtl, PlanetBody } from './PlanetBody'
 import { ProgressRing } from './ProgressRing'
 import type { QualityProfile } from './quality'
-import { runtime } from './runtime'
+import { LAB_STAGE, runtime } from './runtime'
 
 /** The formation chamber: a live preview of the planet being designed. */
 export function LabStage({ quality }: { quality: QualityProfile }) {
@@ -34,7 +34,7 @@ export function LabStage({ quality }: { quality: QualityProfile }) {
   if (!draft) return <group ref={root} visible={false} />
   const R = planetRadius(draft.style.size) * 1.55
   return (
-    <group ref={root} key={nameKey}>
+    <group ref={root} key={nameKey} position={LAB_STAGE}>
       <PlanetBody style={draft.style} radius={R} ctl={ctl} quality={quality} spin={0.11} />
       <group rotation={[Math.PI / 2 + draft.style.tilt * 0.9 + 0.28, 0, draft.style.tilt * 0.6]}>
         <ProgressRing radius={R * 1.62} thickness={R * 0.05} progress={() => 0.62} opacity={() => ctl.opacity * 0.9} color="#e9c98d" trackAlpha={0.2} />

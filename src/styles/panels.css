@@ -70,7 +70,7 @@
 .field {
   margin-bottom: 18px;
 }
-.field > label,
+.field > label:not(.switch-row),
 .label {
   display: block;
   margin-bottom: 7px;

@@ -6,6 +6,7 @@ import {
   goGroup,
   goPlanet,
   goUniverse,
+  loadSampleUniverse,
   openGroupDialog,
   openLab,
   openNewTask,
@@ -208,7 +209,7 @@ function Hints() {
           <button className="btn primary" onClick={() => openLab()}>
             <Icon name="planet" /> Formar o primeiro planeta
           </button>
-          <button className="btn ghost" onClick={() => void import('../state/commands').then((m) => m.loadSampleUniverse())}>
+          <button className="btn ghost" onClick={() => loadSampleUniverse()}>
             <Icon name="sparkle" /> Explorar um universo de exemplo
           </button>
         </div>

@@ -1,6 +1,6 @@
 import { useFrame } from '@react-three/fiber'
 import { useEffect, useMemo, useRef } from 'react'
-import { AdditiveBlending, BackSide, Color, DoubleSide, Matrix3, Mesh, ShaderMaterial, Vector3, Vector4 } from 'three'
+import { AdditiveBlending, BackSide, Color, DoubleSide, Group, Matrix3, Mesh, ShaderMaterial, Vector3, Vector4 } from 'three'
 import type { PlanetStyle } from '../domain/types'
 import { sphereGeo } from './geometry'
 import { runtime } from './runtime'
@@ -45,6 +45,7 @@ interface Props {
 
 export function PlanetBody({ style, radius, ctl, quality, spin = 0.05 }: Props) {
   const surface = useRef<Mesh>(null)
+  const root = useRef<Group>(null)
 
   const surfaceMat = useMemo(
     () =>
@@ -178,6 +179,7 @@ export function PlanetBody({ style, radius, ctl, quality, spin = 0.05 }: Props) 
     c.uTime!.value = t
     c.uOpacity!.value = ctl.opacity
     c.uLightDir!.value.copy(ctl.light)
+    if (root.current) root.current.visible = ctl.opacity > 0.003
     if (surface.current) {
       if (!runtime.reducedMotion) surface.current.rotation.y += spin * dt
       u.uNormalMat!.value.getNormalMatrix(surface.current.matrixWorld)
@@ -186,10 +188,9 @@ export function PlanetBody({ style, radius, ctl, quality, spin = 0.05 }: Props) 
 
   const geo = sphereGeo(quality.sphereSegments)
   const showLayer = layerKind && (quality.atmosphereLayers || layerKind === 'aurora')
-  const visible = ctl.opacity > 0.003
 
   return (
-    <group rotation={[0, 0, style.tilt]} scale={radius} visible={visible}>
+    <group ref={root} rotation={[0, 0, style.tilt]} scale={radius}>
       <mesh ref={surface} geometry={geo} material={surfaceMat} />
       {showLayer && <mesh geometry={geo} material={cloudMat} scale={layerKind === 'aurora' ? 1.035 : 1.016} />}
       {glowDef && <mesh geometry={sphereGeo(Math.min(48, quality.sphereSegments))} material={glowMat} scale={glowDef.r} />}

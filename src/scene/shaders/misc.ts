@@ -207,25 +207,37 @@ void main(){
 
 export const linkVertex = /* glsl */ `
 attribute float aT;
+attribute float aPhase;
 varying float vT;
+varying float vPulse;
+uniform float uTime;
+uniform float uScale;
+uniform float uSize;
 void main(){
   vT = aT;
-  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  // two energy pulses travelling from one task to the other
+  float w = fract(aT * 1.0 - uTime * 0.22 + aPhase);
+  float w2 = fract(aT * 1.0 + 0.5 - uTime * 0.22 + aPhase);
+  vPulse = max(exp(-pow((w - 0.5) * 7.0, 2.0)), exp(-pow((w2 - 0.5) * 7.0, 2.0)));
+  vec4 mv = modelViewMatrix * vec4(position, 1.0);
+  gl_Position = projectionMatrix * mv;
+  float edge = smoothstep(0.0, 0.1, aT) * smoothstep(1.0, 0.9, aT);
+  gl_PointSize = max(1.5, uSize * (0.5 + 0.95 * vPulse) * edge * uScale / max(0.1, -mv.z));
 }
 `
 
 export const linkFragment = /* glsl */ `
 precision highp float;
 varying float vT;
+varying float vPulse;
 uniform vec3 uColor;
-uniform float uTime;
 uniform float uOpacity;
-uniform float uPhase;
 void main(){
-  float edge = smoothstep(0.0, 0.12, vT) * smoothstep(1.0, 0.88, vT);
-  float pulse = pow(0.5 + 0.5 * sin((vT * 7.0 - uTime * 0.9 + uPhase) * 6.2831853 / 2.0), 6.0);
-  float a = (0.28 + 0.72 * pulse) * edge * uOpacity;
-  gl_FragColor = vec4(uColor, clamp(a, 0.0, 1.0));
+  float d = length(gl_PointCoord - 0.5) * 2.0;
+  float soft = pow(clamp(1.0 - d, 0.0, 1.0), 1.6);
+  float edge = smoothstep(0.0, 0.1, vT) * smoothstep(1.0, 0.9, vT);
+  float a = soft * (0.32 + 0.68 * vPulse) * edge * uOpacity;
+  gl_FragColor = vec4(mix(uColor, vec3(1.0), vPulse * 0.3), clamp(a, 0.0, 1.0));
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
 }

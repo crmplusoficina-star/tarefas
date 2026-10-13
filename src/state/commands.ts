@@ -42,6 +42,7 @@ function describeLocation(): string {
 }
 
 function closeTransient() {
+  if (typeof document !== 'undefined') document.body.style.cursor = ''
   uiStore.set({ groupDialog: null, groupManager: false, searchOpen: false, outlineOpen: false, hover: null })
 }
 

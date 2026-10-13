@@ -8,7 +8,7 @@ import { levelOf, uiStore, type Level } from '../state/uiStore'
 import { useStore } from '../state/store'
 import { cameraControl } from './cameraControl'
 import { clamp01, smoothDamp, type Smooth } from './math'
-import { runtime } from './runtime'
+import { LAB_STAGE, runtime } from './runtime'
 
 const BASE_FOV = 45
 
@@ -30,6 +30,7 @@ export function CameraRig() {
     groupId: s.groupId,
     taskId: s.taskId,
     lab: s.lab !== null,
+    labSize: s.lab?.draft.style.size ?? 1,
     forming: s.forming?.id ?? null,
     taskPanel: s.taskPanel !== null,
     navSeq: s.navSeq,
@@ -43,9 +44,10 @@ export function CameraRig() {
     const groups = planet ? groupsOfPlanet(data.groups, planet.id) : []
     const moonExtent = layoutGroups(groups, Rp).extent
     const satExtent = ui.groupId ? layoutTasks(data.tasks.filter((t) => t.groupId === ui.groupId)).extent : 5
+    const labR = planetRadius(ui.labSize) * 1.55
     const formingPlanet = data.planets.find((p) => p.id === ui.forming)
-    return { universe, Rp, moonExtent, satExtent, formingR: planetRadius(formingPlanet?.style.size ?? 1) }
-  }, [data.planets, data.groups, data.tasks, ui.planetId, ui.groupId, ui.forming])
+    return { universe, Rp, moonExtent, satExtent, labR, formingR: planetRadius(formingPlanet?.style.size ?? 1) }
+  }, [data.planets, data.groups, data.tasks, ui.planetId, ui.groupId, ui.forming, ui.labSize])
 
   const st = useRef({
     target: new Vector3(),
@@ -80,14 +82,14 @@ export function CameraRig() {
     const f = frameRef.current
     const u = uiRef.current
     const live = (key: string) => runtime.pos.get(key)
-    if (u.lab) return { kind: 'lab', target: new Vector3(0, 0, 0), dist: 8.5, pol: 1.28, minDist: 4, maxDist: 20 }
+    if (u.lab) return { kind: 'lab', target: LAB_STAGE.clone(), dist: f.labR * 3.9, pol: 1.28, minDist: f.labR * 2, maxDist: f.labR * 9 }
     if (u.forming) {
       const p = live(`p:${u.forming}`) ?? new Vector3()
       return { kind: 'forming', target: p, dist: f.formingR * 5.2 + 3, pol: 1.22, minDist: 4, maxDist: 60 }
     }
     const level = levelOf(u)
     if (level === 'universe') {
-      const d = Math.max(54, (f.universe + 9) * 1.55 + 10)
+      const d = Math.max(54, (f.universe + 10) * 1.85 + 8)
       return { kind: level, target: new Vector3(), dist: d, pol: 0.98, minDist: 16, maxDist: d * 2.4 }
     }
     if (level === 'planet') {
@@ -98,7 +100,7 @@ export function CameraRig() {
       const d = Math.max(10, f.satExtent * 2.05 + 4)
       return { kind: level, target: live(`g:${u.groupId}`) ?? new Vector3(), dist: d, pol: 1.02, minDist: 3.5, maxDist: d * 2.2 }
     }
-    return { kind: level, target: live(`t:${u.taskId}`) ?? new Vector3(), dist: 4.6, pol: 1.16, minDist: 2.2, maxDist: 14 }
+    return { kind: level, target: live(`t:${u.taskId}`) ?? new Vector3(), dist: 7.4, pol: 1.16, minDist: 3, maxDist: 20 }
   }
 
   useEffect(() => {

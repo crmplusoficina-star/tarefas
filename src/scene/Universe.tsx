@@ -74,11 +74,9 @@ interface NodeProps {
   planet: Planet
   stats: Stats
   quality: QualityProfile
-  speed: number
-  showLabels: boolean
 }
 
-function PlanetNode({ planet, stats, quality, speed: _speed }: NodeProps) {
+function PlanetNode({ planet, stats, quality }: NodeProps) {
   const root = useRef<Group>(null)
   const hit = useRef<Mesh>(null)
   const ctl = useMemo(() => makeCtl(), [])
@@ -294,7 +292,7 @@ export function Universe({ quality }: { quality: QualityProfile }) {
         <OrbitLaneGate key={l} lane={l} showOrbits={settings.showOrbits || mode === 'arrange'} />
       ))}
       {planets.map((p) => (
-        <PlanetNode key={p.id} planet={p} stats={stats.get(p.id)!} quality={quality} speed={settings.orbitSpeed} showLabels={settings.showLabels} />
+        <PlanetNode key={p.id} planet={p} stats={stats.get(p.id)!} quality={quality} />
       ))}
       <DragController />
     </group>
