@@ -24,7 +24,7 @@ float fbm(vec3 p, int oct){
   float a = 0.5;
   float s = 0.0;
   float n = 0.0;
-  for (int i = 0; i < 6; i++) {
+  for (int i = 0; i < 9; i++) {
     if (i >= oct) break;
     s += a * vnoise(p);
     n += a;

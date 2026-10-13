@@ -36,13 +36,18 @@ uniform float uOpacity;
 uniform float uDim;
 uniform int uOct;
 uniform float uBump;
+uniform float uClose;
 uniform mat3 uNormalMat;
 
 ${NOISE}
 
+// extra octaves are only paid for when the camera is close enough to see them (uClose 0..1)
+int octs(){ return uOct + int(floor(uClose * 3.0 + 0.5)); }
+
 float rockH(vec3 q){
-  float h1 = fbm(q, uOct);
-  float rd = 1.0 - abs(2.0 * fbm(q * 1.9 + 7.3, uOct) - 1.0);
+  int o = octs();
+  float h1 = fbm(q, o);
+  float rd = 1.0 - abs(2.0 * fbm(q * 1.9 + 7.3, o) - 1.0);
   return mix(h1, rd, 0.25 + 0.5 * uTurb);
 }
 
@@ -73,10 +78,10 @@ void main(){
   if (uMix.y > 0.001) {
     float lat = p.y;
     vec3 wp = vec3(p.x, lat * 1.4, p.z) * sc * 0.55 + uSeedV;
-    float warp = fbm(wp + vec3(uTime * 0.012, 0.0, 0.0), uOct);
+    float warp = fbm(wp + vec3(uTime * 0.012, 0.0, 0.0), octs());
     float freq = mix(4.0, 17.0, uCover);
     float band = sin((lat + (warp - 0.5) * mix(0.15, 0.7, uTurb)) * freq * 3.14159);
-    float fine = fbm(vec3(p.x * sc * 0.9, lat * freq * 0.9 + warp * 2.0, p.z * sc * 0.9) + uSeedV, uOct);
+    float fine = fbm(vec3(p.x * sc * 0.9, lat * freq * 0.9 + warp * 2.0, p.z * sc * 0.9) + uSeedV, octs());
     float gv = 0.5 + 0.28 * band + (fine - 0.5) * (0.4 + 0.5 * uTurb);
     vec3 c = mix(uB, uA, smoothstep(0.2, 0.8, gv));
     c = mix(c, uC, smoothstep(0.72, 1.0, gv) * 0.35);
@@ -90,8 +95,8 @@ void main(){
 
   // ---- oceanic: continents, shallows, ice caps
   if (uMix.z > 0.001) {
-    float land = fbm(q * 0.8, uOct);
-    land += (fbm(q * 3.3 + 3.1, uOct) - 0.5) * (0.15 + 0.45 * uTurb);
+    float land = fbm(q * 0.8, octs());
+    land += (fbm(q * 3.3 + 3.1, octs()) - 0.5) * (0.15 + 0.45 * uTurb);
     float thr = mix(0.36, 0.64, uCover);
     float w = smoothstep(thr - 0.012, thr + 0.012, land);
     float depth = smoothstep(thr - 0.22, thr, land);
@@ -115,6 +120,10 @@ void main(){
     float r = hash21(id + uSeed * 0.013);
     float edge = min(min(f.x, 1.0 - f.x), min(f.y, 1.0 - f.y));
     float grid = 1.0 - smoothstep(0.0, 0.07, edge);
+    // when close, every cell shows its own sub-panels
+    vec2 f2 = fract(g * 4.0);
+    float edge2 = min(min(f2.x, 1.0 - f2.x), min(f2.y, 1.0 - f2.y));
+    grid = max(grid, (1.0 - smoothstep(0.0, 0.09, edge2)) * 0.32 * uClose);
     float panel = fbm(q * 3.0, 3);
     vec3 metal = mix(uA * 0.55, uA * 1.15, panel);
     metal = mix(metal, uB, step(0.8 - 0.25 * uTurb, r) * 0.6);
@@ -137,7 +146,7 @@ void main(){
   vec3 N = N0;
   if (uBump > 0.5 && uMix.x > 0.001) {
     // relief from finite differences of the height field (object space), then rotated to world space
-    float e = 0.03;
+    float e = 0.03 / (1.0 + uClose * 3.0);
     vec3 g = vec3(rockH(q + vec3(e, 0.0, 0.0)) - h0, rockH(q + vec3(0.0, e, 0.0)) - h0, rockH(q + vec3(0.0, 0.0, e)) - h0) / e;
     g -= dot(g, p) * p;
     float k = uMix.x / wsum * (0.06 + uCover * 0.2);
@@ -148,9 +157,10 @@ void main(){
   vec3 V = normalize(cameraPosition - vWorld);
 
   float ndl = dot(N, L);
-  float diff = smoothstep(-0.1, 0.7, ndl);
-  vec3 ambient = vec3(0.05, 0.062, 0.092);
-  vec3 sun = vec3(1.0, 0.94, 0.85) * 1.32;
+  float diff = clamp((ndl + 0.1) / 1.1, 0.0, 1.0);
+  // skylight: a cool fill plus a little of the atmosphere colour, so the night side stays legible
+  vec3 ambient = vec3(0.105, 0.125, 0.18) + uAtmo * uAtmoI * 0.05;
+  vec3 sun = vec3(1.0, 0.94, 0.85) * 1.42;
   vec3 col = albedo * (ambient + sun * diff);
 
   float term = smoothstep(0.0, 0.22, ndl) * smoothstep(0.55, 0.05, ndl);
@@ -165,6 +175,7 @@ void main(){
 
   float fr = pow(1.0 - max(dot(N0, V), 0.0), 3.0);
   col += uAtmo * fr * uAtmoI * 0.3 * smoothstep(-0.35, 0.5, dot(N0, L));
+  col += uAtmo * fr * uAtmoI * 0.08 * (1.0 - smoothstep(-0.35, 0.3, dot(N0, L)));
 
   col *= uDim;
   gl_FragColor = vec4(col, uOpacity);
@@ -223,8 +234,10 @@ uniform vec3 uLightDir;
 uniform float uOpacity;
 uniform int uKind; // 3 aurora, 4 storm, 5 clouds
 uniform int uOct;
+uniform float uClose;
 ${NOISE}
 void main(){
+  int oc = uOct + int(floor(uClose * 2.0 + 0.5));
   vec3 p = normalize(vObj);
   vec3 N = normalize(vNormalW);
   vec3 L = normalize(uLightDir);
@@ -239,7 +252,7 @@ void main(){
     float lat = abs(p.y);
     float band = smoothstep(0.52, 0.72, lat) * (1.0 - smoothstep(0.88, 0.99, lat));
     float ang = atan(p.z, p.x);
-    float n = fbm(vec3(ang * 1.6 + uTime * 0.08, lat * 6.0, uTime * 0.12) + uSeedV, uOct);
+    float n = fbm(vec3(ang * 1.6 + uTime * 0.08, lat * 6.0, uTime * 0.12) + uSeedV, oc);
     float curtain = pow(smoothstep(0.35, 0.85, n), 1.4);
     float shimmer = 0.65 + 0.35 * sin(ang * 9.0 + uTime * 0.7 + n * 6.0);
     float rim = pow(1.0 - max(dot(N, V), 0.0), 1.2);
@@ -250,8 +263,8 @@ void main(){
     float spin = uTime * (uKind == 4 ? 0.035 : 0.012);
     vec3 q = vec3(p.x * cos(spin) - p.z * sin(spin), p.y, p.x * sin(spin) + p.z * cos(spin));
     float lat = p.y;
-    float swirl = fbm(q * 2.2 + uSeedV, uOct);
-    float n = fbm(q * (uKind == 4 ? 3.6 : 2.6) + swirl * (uKind == 4 ? 2.2 : 1.1) + uSeedV * 1.7, uOct);
+    float swirl = fbm(q * 2.2 + uSeedV, oc);
+    float n = fbm(q * (uKind == 4 ? 3.6 : 2.6) + swirl * (uKind == 4 ? 2.2 : 1.1) + uSeedV * 1.7, oc);
     if (uKind == 4) {
       float bands = 0.5 + 0.5 * sin((lat + (swirl - 0.5) * 0.6) * 14.0);
       n = mix(n, bands, 0.35);
