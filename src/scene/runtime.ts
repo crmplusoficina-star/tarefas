@@ -19,11 +19,12 @@ export const runtime = {
   /** orbit clocks (already multiplied by user speed and smoothed) */
   tU: 0,
   tP: 0,
-  tG: 0,
+  /** satellites: runs while a planet or one of its groups is open */
+  tS: 0,
   /** smoothed speed factors 0..1 */
   fU: 1,
   fP: 1,
-  fG: 1,
+  fS: 1,
   reducedMotion: false,
   camera: null as PerspectiveCamera | null,
   width: 1,
@@ -56,6 +57,10 @@ export const runtime = {
   reveal: 0,
   /** current zoom focus (object the camera is converging on) — also read by the e2e checks */
   zoomFocus: { key: null as string | null, w: 0 },
+  /** 0 = moon seen from the planet, 1 = moon focused: lets its satellites follow the zoom */
+  moonFocus: new Map<string, number>(),
+  /** planetId → 0..1 level of detail of the summary halo seen from the universe */
+  halo: new Map<string, number>(),
 }
 
 /** Simulation step for a frame: clamped wall time, or the fixed test step. */

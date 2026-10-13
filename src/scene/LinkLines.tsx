@@ -10,7 +10,7 @@ const DOTS = 56
  * Luminous trails between related tasks: a bezier of soft light-dots with pulses of energy
  * travelling along it. Endpoints are read from the live anchor positions each frame.
  */
-export function LinkLines({ pairs, opacity }: { pairs: [string, string][]; opacity: () => number }) {
+export function LinkLines({ pairs, opacity, centerKey }: { pairs: [string, string][]; opacity: () => number; centerKey: string }) {
   const ref = useRef<Points>(null)
   const { gl, camera } = useThree()
   const { geo, pos, mat } = useMemo(() => {
@@ -68,7 +68,7 @@ export function LinkLines({ pairs, opacity }: { pairs: [string, string][]; opaci
       b.copy(pb)
       // pull the arc towards the system centre so links read as a web, not chords
       c.copy(a).add(b).multiplyScalar(0.5)
-      const centre = runtime.pos.get('center')
+      const centre = runtime.pos.get(centerKey)
       if (centre) c.lerp(centre, 0.4)
       for (let i = 0; i < DOTS; i++) {
         const u = i / (DOTS - 1)

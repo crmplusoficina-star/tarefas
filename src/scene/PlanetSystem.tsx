@@ -2,6 +2,7 @@ import { useFrame, type ThreeEvent } from '@react-three/fiber'
 import { useEffect, useMemo, useRef } from 'react'
 import { AdditiveBlending, BufferAttribute, BufferGeometry, Color, Float32BufferAttribute, Group, IcosahedronGeometry, LineLoop, Mesh, MeshStandardMaterial, Points, PointsMaterial, ShaderMaterial, Vector3 } from 'three'
 import { layoutGroups, MOON_RADIUS, planetRadius, TAU, type MoonSlot } from '../domain/layout'
+import { groupReach, planetReach, rankTasks, satelliteCap } from '../domain/overview'
 import { groupsOfPlanet, groupVisualKind, statsOf, tasksOfGroup, type Stats } from '../domain/stats'
 import { urgencyOf } from '../domain/time'
 import type { Group as GroupT, Planet, PlanetStyle, Task } from '../domain/types'
@@ -21,6 +22,7 @@ import type { QualityProfile } from './quality'
 import { anchor, forgetAnchor, runtime, stepDt } from './runtime'
 import { orbitFragment, orbitVertex } from './shaders/misc'
 import { SatelliteSystem, STATUS_COLOR } from './Satellites'
+import { useQualityTier } from './useQuality'
 import { Station } from './Station'
 
 const URGENCY_COLOR = ['#000000', '#ffd36b', '#ffa247', '#ff5a4a']
@@ -137,13 +139,16 @@ interface MoonProps {
   group: GroupT
   slot: MoonSlot
   stats: Stats
-  tasks: Task[]
+  /** tasks of the group that do not fit as individual satellites: shown as a faint dust of lights */
+  overflow: Task[]
+  /** radius of the outermost compact satellite orbit */
+  reach: number
   planetKey: string
   quality: QualityProfile
   index: number
 }
 
-function MoonNode({ group, slot, stats, tasks, planetKey, quality, index }: MoonProps) {
+function MoonNode({ group, slot, stats, overflow, reach, planetKey, quality, index }: MoonProps) {
   const root = useRef<Group>(null)
   const hit = useRef<Mesh>(null)
   const ctl = useMemo(() => makeCtl(), [])
@@ -159,7 +164,13 @@ function MoonNode({ group, slot, stats, tasks, planetKey, quality, index }: Moon
   const kind = groupVisualKind(group, stats)
   const R = MOON_RADIUS
 
-  useEffect(() => () => forgetAnchor(key), [key])
+  useEffect(
+    () => () => {
+      forgetAnchor(key)
+      runtime.moonFocus.delete(group.id)
+    },
+    [key, group.id],
+  )
   usePickable(hit, key)
 
   useFrame((_, dtRaw) => {
@@ -178,6 +189,7 @@ function MoonNode({ group, slot, stats, tasks, planetKey, quality, index }: Moon
     const target = wants ? (peeking ? runtime.reveal : 1) : 0
     o.presence = runtime.reducedMotion ? target : damp(o.presence, target, peeking ? 8 : wants ? 3 : 5, dt)
     o.focus = runtime.reducedMotion ? (inGroup ? 1 : 0) : damp(o.focus, inGroup ? 1 : 0, 3.2, dt)
+    runtime.moonFocus.set(group.id, o.focus)
 
     const tAngle = sl.phase + sl.omega * runtime.tP
     if (!o.ready) {
@@ -249,7 +261,7 @@ function MoonNode({ group, slot, stats, tasks, planetKey, quality, index }: Moon
       <mesh ref={hit} geometry={sphereGeo(12)} scale={R * 1.9} onPointerOver={(e) => (e.stopPropagation(), hover(true))} onPointerOut={() => hover(false)} onClick={onClick}>
         <meshBasicMaterial transparent opacity={0} depthWrite={false} colorWrite={false} />
       </mesh>
-      <MiniSats tasks={tasks} centerKey={key} radiusFn={() => R * (1 + st.current.focus * 0.95) * 2.15} visibility={() => ctl.opacity * (1 - st.current.focus)} seed={style.seed} />
+      <MiniSats tasks={overflow} centerKey={key} radiusFn={() => Math.max(reach, R * 2.6) + 0.35} visibility={() => ctl.opacity * (1 - st.current.focus)} seed={style.seed} />
     </group>
   )
 }
@@ -313,11 +325,15 @@ function PlanetSystemInner({ planet, quality }: { planet: Planet; quality: Quali
   const allGroups = useStore(dataStore, (s) => s.data.groups)
   const allTasks = useStore(dataStore, (s) => s.data.tasks)
   const now = useStore(clockStore, (s) => s.now)
-  const groupId = useStore(uiStore, (s) => s.groupId)
   const lab = useStore(uiStore, (s) => s.lab !== null)
+  const tier = useQualityTier()
   const planetKey = `p:${planet.id}`
   const groups = useMemo(() => groupsOfPlanet(allGroups, planet.id), [allGroups, planet.id])
-  const layout = useMemo(() => layoutGroups(groups, planetRadius(planet.style.size)), [groups, planet.style.size])
+  const planetTasks = useMemo(() => allTasks.filter((t) => t.planetId === planet.id), [allTasks, planet.id])
+  // each group may draw only so many satellites; the lanes of moons leave room for them
+  const cap = satelliteCap(groups.length, tier)
+  const reach = useMemo(() => planetReach(groups, planetTasks, cap), [groups, planetTasks, cap])
+  const layout = useMemo(() => layoutGroups(groups, planetRadius(planet.style.size), reach), [groups, planet.style.size, reach])
   const presence = useRef({ current: 0 })
 
   useFrame((_, dt) => {
@@ -334,16 +350,14 @@ function PlanetSystemInner({ planet, quality }: { planet: Planet; quality: Quali
   }, [layout])
 
   const perGroup = useMemo(() => {
-    const m = new Map<string, { tasks: Task[]; stats: Stats }>()
+    const m = new Map<string, { tasks: Task[]; stats: Stats; overflow: Task[]; reach: number }>()
     for (const g of groups) {
       const tasks = tasksOfGroup(allTasks, g.id)
-      m.set(g.id, { tasks, stats: statsOf(tasks, now) })
+      const ranked = rankTasks(tasks, now)
+      m.set(g.id, { tasks, stats: statsOf(tasks, now), overflow: ranked.slice(cap, cap + 14), reach: groupReach(ranked.slice(0, cap)) })
     }
     return m
-  }, [groups, allTasks, now])
-
-  const focusGroup = groups.find((g) => g.id === groupId)
-  const focusTasks = focusGroup ? perGroup.get(focusGroup.id)?.tasks ?? [] : []
+  }, [groups, allTasks, now, cap])
 
   return (
     <group>
@@ -354,9 +368,14 @@ function PlanetSystemInner({ planet, quality }: { planet: Planet; quality: Quali
         const slot = layout.slots.get(g.id)
         const info = perGroup.get(g.id)
         if (!slot || !info) return null
-        return <MoonNode key={g.id} group={g} slot={slot} stats={info.stats} tasks={info.tasks} planetKey={planetKey} quality={quality} index={i} />
+        return <MoonNode key={g.id} group={g} slot={slot} stats={info.stats} overflow={info.overflow} reach={info.reach} planetKey={planetKey} quality={quality} index={i} />
       })}
-      {focusGroup && <SatelliteSystem key={focusGroup.id} groupId={focusGroup.id} tasks={focusTasks} quality={quality} centerKey={`g:${focusGroup.id}`} />}
+      {/* every group shows its own tasks at once; focusing a group only opens them up */}
+      {groups.map((g) => {
+        const info = perGroup.get(g.id)
+        if (!info || info.tasks.length === 0) return null
+        return <SatelliteSystem key={g.id} group={g} tasks={info.tasks} quality={quality} centerKey={`g:${g.id}`} cap={cap} />
+      })}
     </group>
   )
 }

@@ -2,9 +2,10 @@ import { useFrame, type ThreeEvent } from '@react-three/fiber'
 import { useEffect, useMemo, useRef } from 'react'
 import { BufferGeometry, Color, Group, LineLoop, Mesh, MeshStandardMaterial, ShaderMaterial, Vector3, Float32BufferAttribute, AdditiveBlending } from 'three'
 import { BAND_ORDER, layoutTasks, TAU, type Band, type SatSlot } from '../domain/layout'
+import { OVERVIEW, overviewRadius, pickOverview } from '../domain/overview'
 import { subtaskProgress } from '../domain/stats'
 import { urgencyOf } from '../domain/time'
-import type { Priority, Status, Task } from '../domain/types'
+import type { Group as GroupData, Priority, Status, Task } from '../domain/types'
 import { selectTask } from '../state/commands'
 import { clockStore } from '../state/clock'
 import { levelOf, uiStore } from '../state/uiStore'
@@ -71,15 +72,17 @@ interface SatProps {
   mats: Mats
   /** 0..1 how much of the system is shown (fades while flying elsewhere) */
   presence: { current: number }
+  /** 0 = seen from the planet (compact), 1 = its group is focused (full size) */
+  focus: () => number
 }
 
-function Satellite({ task, slot, bandTilt, center, quality, mats, presence }: SatProps) {
+function Satellite({ task, slot, bandTilt, center, quality, mats, presence, focus }: SatProps) {
   const root = useRef<Group>(null)
   const model = useRef<Group>(null)
   const dish = useRef<Group>(null)
   const hit = useRef<Mesh>(null)
   const key = `t:${task.id}`
-  const st = useRef({ radius: slot.radius * 2.4, angle: slot.phase, scale: 0, ready: false, born: 0, lift: 1, doneBlend: task.status === 'done' ? 1 : 0, hover: 0, select: 0 })
+  const st = useRef({ radius: overviewRadius(slot.radius) * 2, angle: slot.phase, scale: 0, ready: false, born: 0, lift: 1, doneBlend: task.status === 'done' ? 1 : 0, hover: 0, select: 0 })
   const taskRef = useRef(task)
   taskRef.current = task
   const slotRef = useRef(slot)
@@ -105,13 +108,17 @@ function Satellite({ task, slot, bandTilt, center, quality, mats, presence }: Sa
     const o = st.current
     const centerPos = runtime.pos.get(center)
     if (!centerPos) return
-    const tAngle = sl.phase + sl.omega * runtime.tG
+    const tAngle = sl.phase + sl.omega * runtime.tS
     if (!o.ready) {
       o.angle = tAngle
       o.ready = true
     }
+    // compact orbit around the moon while the planet is viewed as a whole; full orbit when the group is focused
+    const k = focus()
+    const rOverview = overviewRadius(sl.radius)
     o.angle = dampAngle(o.angle, tAngle, 5, dt)
-    o.radius = damp(o.radius, sl.radius, runtime.reducedMotion ? 30 : 3.2, dt)
+    o.radius = damp(o.radius, rOverview + (sl.radius - rOverview) * k, runtime.reducedMotion ? 30 : 3.2, dt)
+    const sizeK = OVERVIEW.satScale + (1 - OVERVIEW.satScale) * k
     // launch: grow in from the outside
     if (!o.born) o.born = performance.now()
     const age = (performance.now() - o.born) / 1000
@@ -122,13 +129,15 @@ function Satellite({ task, slot, bandTilt, center, quality, mats, presence }: Sa
     o.hover = damp(o.hover, isHover ? 1 : 0, 10, dt)
     o.select = damp(o.select, isSel ? 1 : 0, 6, dt)
     o.doneBlend = damp(o.doneBlend, t.status === 'done' ? 1 : 0, 3, dt)
-    o.scale = s0 * intro * (1 + o.hover * 0.28 + o.select * 0.18)
+    o.scale = s0 * sizeK * intro * (1 + o.hover * (0.28 + 0.9 * (1 - k)) + o.select * 0.18)
 
     orbitPoint(tmp, o.radius, o.angle, tiltRef.current).add(centerPos)
     g.position.copy(tmp)
     anchor(key).copy(tmp)
-    runtime.size.set(key, 0.2 * s0)
+    runtime.size.set(key, 0.2 * s0 * sizeK)
     g.scale.setScalar(Math.max(0.0001, o.scale) * presence.current)
+    // however small the satellite is drawn, keep a comfortable target to hover and click
+    if (hit.current) hit.current.scale.setScalar(Math.max(0.34, 0.32 / Math.max(0.02, g.scale.x)))
     g.visible = presence.current > 0.02
     if (hit.current) hit.current.raycast = presence.current > 0.7 ? Mesh.prototype.raycast : () => {}
 
@@ -200,7 +209,8 @@ function Satellite({ task, slot, bandTilt, center, quality, mats, presence }: Sa
         intensity={() => {
           const rate = urg === 3 ? 5 : urg === 2 ? 3 : urg === 1 ? 1.7 : task.status === 'blocked' ? 1.2 : 0.9
           const wave = runtime.reducedMotion ? 0.85 : 0.6 + 0.4 * Math.sin(runtime.time * rate + slot.phase * 5)
-          return beaconBase * wave * presence.current * (1 + st.current.select * 0.5 + st.current.hover * 0.5)
+          // small satellites keep a stronger glint so urgent ones read from a distance
+          return beaconBase * wave * presence.current * (1 + st.current.select * 0.5 + st.current.hover * 0.5 + (1 - focus()) * 0.9)
         }}
       />
       {hasSub && (
@@ -220,7 +230,7 @@ function Satellite({ task, slot, bandTilt, center, quality, mats, presence }: Sa
         renderOrder={5}
         intensity={() => st.current.select * 0.55 * presence.current}
       />
-      <mesh ref={hit} geometry={sphereGeo(10)} scale={0.34} onPointerOver={(e) => (e.stopPropagation(), hover(true))} onPointerOut={() => hover(false)} onClick={onClick}>
+      <mesh ref={hit} geometry={sphereGeo(10)} onPointerOver={(e) => (e.stopPropagation(), hover(true))} onPointerOut={() => hover(false)} onClick={onClick}>
         <meshBasicMaterial transparent opacity={0} depthWrite={false} colorWrite={false} />
       </mesh>
     </group>
@@ -229,7 +239,7 @@ function Satellite({ task, slot, bandTilt, center, quality, mats, presence }: Sa
 
 /* ------------------------------------------------------------- band rings */
 
-function BandRing({ radius, tilt, center, presence }: { radius: number; tilt: number; center: string; presence: { current: number } }) {
+function BandRing({ radius, tilt, center, presence, color = '#9fb4d8', opacity = 0.11 }: { radius: number; tilt: number; center: string; presence: { current: number }; color?: string; opacity?: number }) {
   const ref = useRef<LineLoop>(null)
   const geo = useMemo(() => {
     const pts: number[] = []
@@ -250,10 +260,14 @@ function BandRing({ radius, tilt, center, presence }: { radius: number; tilt: nu
         transparent: true,
         depthWrite: false,
         blending: AdditiveBlending,
-        uniforms: { uColor: { value: new Color('#9fb4d8') }, uOpacity: { value: 0.1 }, uTime: { value: 0 }, uDash: { value: 1 } },
+        uniforms: { uColor: { value: new Color(color) }, uOpacity: { value: opacity }, uTime: { value: 0 }, uDash: { value: 1 } },
       }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   )
+  useEffect(() => {
+    mat.uniforms.uColor!.value.set(color)
+  }, [mat, color])
   useEffect(
     () => () => {
       geo.dispose()
@@ -266,7 +280,7 @@ function BandRing({ radius, tilt, center, presence }: { radius: number; tilt: nu
     const l = ref.current
     if (!l || !p) return
     l.position.copy(p)
-    mat.uniforms.uOpacity!.value = 0.11 * presence.current
+    mat.uniforms.uOpacity!.value = opacity * presence.current
     l.visible = presence.current > 0.02
   })
   return <lineLoop ref={ref} geometry={geo} material={mat} rotation={[tilt, 0, 0]} frustumCulled={false} renderOrder={-5} />
@@ -274,7 +288,12 @@ function BandRing({ radius, tilt, center, presence }: { radius: number; tilt: nu
 
 /* ----------------------------------------------------------- the system */
 
-export function SatelliteSystem({ groupId, tasks, quality, centerKey }: { groupId: string; tasks: Task[]; quality: QualityProfile; centerKey: string }) {
+/**
+ * The task satellites of ONE group. Seen from the planet they orbit their moon in a compact form
+ * (the most relevant tasks of the group); when the group is focused they open up into the full
+ * priority bands. Several of these run side by side, one per group.
+ */
+export function SatelliteSystem({ group, tasks, quality, centerKey, cap }: { group: GroupData; tasks: Task[]; quality: QualityProfile; centerKey: string; cap: number }) {
   const mats = useSatMaterials()
   useEffect(
     () => () => {
@@ -284,62 +303,83 @@ export function SatelliteSystem({ groupId, tasks, quality, centerKey }: { groupI
     },
     [mats],
   )
-  const layout = useMemo(() => layoutTasks(tasks), [tasks])
-  const active = useStore(uiStore, (s) => s.groupId === groupId && !s.lab)
+  const now = useStore(clockStore, (s) => s.now)
+  const focused = useStore(uiStore, (s) => s.groupId === group.id)
+  // the planet view draws the most relevant tasks; focusing the group reveals all of them
+  const shown = useMemo(() => (focused ? tasks : pickOverview(tasks, cap, now)), [focused, tasks, cap, now])
+  const layout = useMemo(() => layoutTasks(shown), [shown])
   const presence = useRef({ current: 0 })
-  const dummy = useRef<Group>(null)
+  const ringFocus = useRef({ current: 0 })
+  const ringOverview = useRef({ current: 0 })
+  const focus = useMemo(() => () => runtime.moonFocus.get(group.id) ?? 0, [group.id])
+  const bandKey = (band: Band) => `b:${group.id}:${band}`
+
   useFrame((_, dt) => {
-    const target = active ? 1 : 0
-    presence.current.current = runtime.reducedMotion ? target : damp(presence.current.current, target, active ? 2.6 : 5, dt)
+    const ui = uiStore.get()
+    let target = 0
+    if (!ui.lab) {
+      if (ui.planetId) target = ui.groupId ? (ui.groupId === group.id ? 1 : 0) : 1
+      else if (ui.peekPlanetId === group.planetId) target = runtime.reveal
+    }
+    const d = stepDt(dt)
+    presence.current.current = runtime.reducedMotion ? target : damp(presence.current.current, target, target > presence.current.current ? 2.6 : 5, d)
+    const k = focus()
+    ringFocus.current.current = presence.current.current * k
+    ringOverview.current.current = presence.current.current * (1 - k)
+    // band label anchors sit on the screen-right side of each ring (only meaningful for the focused group)
     const c = runtime.pos.get(centerKey)
-    if (c) anchor('center').copy(c)
-    // band label anchors sit on the screen-right side of each ring
-    for (const b of layout.bands) {
-      const r = b.inner
-      const a = -runtime.cam.az
-      orbitPoint(anchor(`b:${b.band}`), r, a, BAND_TILT[b.band])
-      anchor(`b:${b.band}`).add(c ?? anchor('center'))
+    if (c && focused) {
+      for (const b of layout.bands) {
+        orbitPoint(anchor(bandKey(b.band)), b.inner, -runtime.cam.az, BAND_TILT[b.band])
+        anchor(bandKey(b.band)).add(c)
+      }
     }
   })
   useEffect(
     () => () => {
-      forgetAnchor('center')
-      BAND_ORDER.forEach((b) => forgetAnchor(`b:${b}`))
+      BAND_ORDER.forEach((b) => forgetAnchor(bandKey(b)))
     },
-    [],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [group.id, focused],
   )
 
   const pairs = useMemo(() => {
+    const ids = new Set(shown.map((t) => t.id))
     const seen = new Set<string>()
     const out: [string, string][] = []
-    for (const t of tasks)
+    for (const t of shown)
       for (const l of t.links) {
+        if (!ids.has(l)) continue
         const k = [t.id, l].sort().join('|')
         if (seen.has(k)) continue
         seen.add(k)
         out.push([`t:${t.id}`, `t:${l}`])
       }
     return out
-  }, [tasks])
+  }, [shown])
 
   return (
-    <group ref={dummy}>
+    <group>
       {layout.bands.map((b) => {
         const rings: number[] = []
         for (let r = b.inner; r <= b.outer + 0.01; r += 0.6) rings.push(r)
-        return rings.map((r, i) => <BandRing key={`${b.band}${i}`} radius={r} tilt={BAND_TILT[b.band]} center={centerKey} presence={presence.current} />)
+        return rings.map((r, i) => <BandRing key={`f${b.band}${i}`} radius={r} tilt={BAND_TILT[b.band]} center={centerKey} presence={ringFocus.current} />)
       })}
-      {tasks.map((t) => {
+      {/* compact view: one faint ring per priority band, tinted with the group's colour */}
+      {layout.bands.map((b) => (
+        <BandRing key={`o${b.band}`} radius={overviewRadius((b.inner + b.outer) / 2)} tilt={BAND_TILT[b.band]} center={centerKey} presence={ringOverview.current} color={group.color} opacity={0.34} />
+      ))}
+      {shown.map((t) => {
         const slot = layout.slots.get(t.id)
         if (!slot) return null
-        return <Satellite key={t.id} task={t} slot={slot} bandTilt={BAND_TILT[slot.band]} center={centerKey} quality={quality} mats={mats} presence={presence.current} />
+        return <Satellite key={t.id} task={t} slot={slot} bandTilt={BAND_TILT[slot.band]} center={centerKey} quality={quality} mats={mats} presence={presence.current} focus={focus} />
       })}
-      <LinkLinesGate pairs={pairs} presence={presence.current} />
+      <LinkLinesGate pairs={pairs} presence={ringFocus.current} centerKey={centerKey} />
     </group>
   )
 }
 
-function LinkLinesGate({ pairs, presence }: { pairs: [string, string][]; presence: { current: number } }) {
+function LinkLinesGate({ pairs, presence, centerKey }: { pairs: [string, string][]; presence: { current: number }; centerKey: string }) {
   const level = useStore(uiStore, (s) => levelOf(s))
-  return <LinkLines pairs={pairs} opacity={() => presence.current * (level === 'task' ? 0.9 : 0.75)} />
+  return <LinkLines pairs={pairs} centerKey={centerKey} opacity={() => presence.current * (level === 'task' ? 0.9 : 0.75)} />
 }

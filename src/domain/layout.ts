@@ -114,15 +114,18 @@ export interface MoonSlot {
 
 export const MOON_RADIUS = 0.62
 
-export function layoutGroups(groups: Group[], planetR: number): { slots: Map<string, MoonSlot>; extent: number } {
+export function layoutGroups(groups: Group[], planetR: number, reach = 0): { slots: Map<string, MoonSlot>; extent: number } {
   const slots = new Map<string, MoonSlot>()
   const sorted = [...groups].sort((a, b) => a.order - b.order)
+  // when moons carry their own satellites the lanes must leave room for them
+  const gap = Math.max(2.7, reach * 2 + 0.7)
+  const base = planetR * 1.9 + 2.4 + Math.max(0, reach - 1.6)
   let idx = 0
   let lane = 0
   let extent = planetR * 2.2
   while (idx < sorted.length) {
     const cap = 3 + lane * 2
-    const radius = planetR * 1.9 + 2.4 + lane * 2.7
+    const radius = base + lane * gap
     const inLane = sorted.slice(idx, idx + cap)
     inLane.forEach((g, i) => {
       slots.set(g.id, {
@@ -133,7 +136,7 @@ export function layoutGroups(groups: Group[], planetR: number): { slots: Map<str
         omega: 0.14 / (1 + lane * 0.42),
       })
     })
-    extent = radius
+    extent = radius + reach
     idx += cap
     lane++
   }

@@ -242,3 +242,36 @@ void main(){
   #include <colorspace_fragment>
 }
 `
+
+/** Round soft dots with a world-space diameter: the in-scene summary around a planet (groups and tasks). */
+export const haloPointVertex = /* glsl */ `
+attribute float aSize;
+attribute vec3 aColor;
+attribute float aAlpha;
+uniform float uScale;
+varying vec3 vColor;
+varying float vAlpha;
+void main(){
+  vec4 mv = modelViewMatrix * vec4(position, 1.0);
+  gl_Position = projectionMatrix * mv;
+  gl_PointSize = clamp(aSize * uScale / max(0.001, -mv.z), 3.0, 40.0);
+  vColor = aColor;
+  vAlpha = aAlpha;
+}
+`
+
+export const haloPointFragment = /* glsl */ `
+precision highp float;
+varying vec3 vColor;
+varying float vAlpha;
+uniform float uOpacity;
+void main(){
+  float d = length(gl_PointCoord - 0.5) * 2.0;
+  if (d > 1.0) discard;
+  float core = smoothstep(1.0, 0.5, d);
+  float rim = pow(1.0 - d, 2.0) * 0.45;
+  gl_FragColor = vec4(vColor, clamp((core * 0.8 + rim) * vAlpha * uOpacity, 0.0, 1.0));
+  #include <tonemapping_fragment>
+  #include <colorspace_fragment>
+}
+`

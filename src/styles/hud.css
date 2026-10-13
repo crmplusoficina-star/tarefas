@@ -472,6 +472,31 @@
   color: var(--ink-3);
   padding: 0;
 }
+.wl .badge {
+  font: 600 10px var(--font-mono);
+  letter-spacing: 0.02em;
+  padding: 0 5px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--ink-2);
+  line-height: 15px;
+}
+.wl .badge.alert {
+  background: rgba(255, 90, 74, 0.2);
+  color: #ff8d80;
+}
+.wl.task {
+  border-left: 2px solid rgba(255, 255, 255, 0.25);
+}
+.wl.task .txt {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wl.halo {
+  transition: opacity 0.18s linear;
+  pointer-events: none;
+}
 .wl .pip {
   width: 7px;
   height: 7px;

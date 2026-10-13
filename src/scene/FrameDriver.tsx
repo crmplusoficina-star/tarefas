@@ -39,14 +39,14 @@ export function FrameDriver() {
     // orbits ease almost to a halt while the pointer is on a planet, so it is easy to click
     const tU = level === 'universe' && ui.mode !== 'arrange' && !lab && !ui.forming ? (ui.hover ? 0.1 : 1) : 0
     const tP = level === 'planet' && !lab ? 1 : 0
-    const tG = level === 'group' && !lab ? 1 : 0
+    const tS = (level === 'planet' || level === 'group' || (level === 'universe' && ui.peekPlanetId !== null)) && !lab ? 1 : 0
     const k = 1 - Math.exp(-dt * 1.7)
     runtime.fU += (tU - runtime.fU) * k
     runtime.fP += (tP - runtime.fP) * k
-    runtime.fG += (tG - runtime.fG) * k
+    runtime.fS += (tS - runtime.fS) * k
     runtime.tU += dt * runtime.fU * speed
     runtime.tP += dt * runtime.fP * speed
-    runtime.tG += dt * runtime.fG * speed
+    runtime.tS += dt * runtime.fS * speed
 
     // frame-time watchdog (only when effects are on "auto")
     const p = perf.current

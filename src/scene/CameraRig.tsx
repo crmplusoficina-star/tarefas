@@ -2,6 +2,8 @@ import { useFrame, useThree } from '@react-three/fiber'
 import { useEffect, useMemo, useRef } from 'react'
 import { PerspectiveCamera, Vector2, Vector3 } from 'three'
 import { groupsOfPlanet } from '../domain/stats'
+import { planetReach, satelliteCap } from '../domain/overview'
+import type { Group, Task } from '../domain/types'
 import { laneHeight, laneOmega, laneRadius, layoutGroups, layoutTasks, planetRadius, universeExtent } from '../domain/layout'
 import { enterPlanetByProximity, exitPlanetByProximity } from '../state/commands'
 import { dataStore } from '../state/dataStore'
@@ -12,6 +14,7 @@ import { clamp01, smoothDamp, type Smooth } from './math'
 import { pickAt, sharedRaycaster } from './pick'
 import { intentCancel, intentStep, intentWheel, newIntent, proximityDistances, revealAmount } from './proximity'
 import { LAB_STAGE, runtime, stepDt } from './runtime'
+import { useQualityTier } from './useQuality'
 import { focusWeightAfterZoom, pushOutOfSphere, rayPlaneHit, rayPointDistance, wheelFactor } from './zoom'
 
 const BASE_FOV = 45
@@ -28,11 +31,23 @@ interface Goal {
 type Kind = Level | 'lab' | 'forming'
 
 const sm = (): Smooth => ({ v: 0 })
+
+/** default camera distance of a planet's own level: its moons and their satellites fill the view */
+const planetDistance = (Rp: number, extent: number) => Math.max(Rp * 4.4 + 4, extent * 1.9 + 4)
+
+/** radial room the moon lanes leave for the satellites shown around each group */
+function reachOf(planetId: string | null, groups: Group[], tasks: Task[], tier: 'low' | 'medium' | 'high'): number {
+  if (!planetId || groups.length === 0) return 0
+  return planetReach(groups, tasks.filter((t) => t.planetId === planetId), satelliteCap(groups.length, tier))
+}
 const smoothstep = (x: number) => x * x * (3 - 2 * x)
 
 export function CameraRig() {
   const { camera, gl, size } = useThree()
   const data = useStore(dataStore, (s) => s.data)
+  const tier = useQualityTier()
+  const tierRef = useRef(tier)
+  tierRef.current = tier
   const ui = useStore(uiStore, (s) => ({
     planetId: s.planetId,
     groupId: s.groupId,
@@ -53,12 +68,12 @@ export function CameraRig() {
     const universe = universeExtent(data.planets)
     const Rp = planetRadius(planet?.style.size ?? 1)
     const groups = planet ? groupsOfPlanet(data.groups, planet.id) : []
-    const moonExtent = layoutGroups(groups, Rp).extent
+    const moonExtent = layoutGroups(groups, Rp, reachOf(planet?.id ?? null, groups, data.tasks, tier)).extent
     const satExtent = ui.groupId ? layoutTasks(data.tasks.filter((t) => t.groupId === ui.groupId)).extent : 5
     const labR = planetRadius(ui.labSize) * 1.55
     const formingPlanet = data.planets.find((p) => p.id === ui.forming)
     return { universe, Rp, moonExtent, satExtent, labR, formingR: planetRadius(formingPlanet?.style.size ?? 1) }
-  }, [data.planets, data.groups, data.tasks, ui.planetId, ui.groupId, ui.forming, ui.labSize])
+  }, [data.planets, data.groups, data.tasks, ui.planetId, ui.groupId, ui.forming, ui.labSize, tier])
 
   const st = useRef({
     target: new Vector3(),
@@ -149,7 +164,7 @@ export function CameraRig() {
         const d = Math.max(54, (f.universe + 10) * 1.85 + 8)
         g = { kind: level, target: new Vector3(), dist: d, pol: 0.98, minDist: 4, maxDist: d * 2.4 }
       } else if (level === 'planet') {
-        const d = Math.max(f.Rp * 4.4 + 4, f.moonExtent * 2.15 + 4)
+        const d = planetDistance(f.Rp, f.moonExtent)
         g = { kind: level, target: pick(level, live(`p:${u.planetId}`) ?? planetFallback(u.planetId)), dist: d, pol: 1.1, minDist: f.Rp * 1.8, maxDist: d * 2.4 }
       } else if (level === 'group') {
         const d = Math.max(10, f.satExtent * 2.05 + 4)
@@ -557,8 +572,9 @@ export function CameraRig() {
     const d = dataRef.current
     const p = d.planets.find((x) => x.id === planetId)
     const Rp = planetRadius(p?.style.size ?? 1)
-    const extent = layoutGroups(groupsOfPlanet(d.groups, planetId), Rp).extent
-    return Math.max(Rp * 4.4 + 4, extent * 2.15 + 4)
+    const groups = groupsOfPlanet(d.groups, planetId)
+    const extent = layoutGroups(groups, Rp, reachOf(planetId, groups, d.tasks, tierRef.current)).extent
+    return planetDistance(Rp, extent)
   }
 
   return null

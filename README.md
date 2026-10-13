@@ -55,6 +55,14 @@ Atalhos: `?` abre a lista completa dentro do app.
 - **Continuidade**: a mudança de nível mantém a pose da câmera; o "voo" cinematográfico é medido em tempo de simulação; o alvo nunca cai na estrela; a câmera contorna corpos em vez de atravessá-los.
 - Detalhes, números e capturas comparativas: [`docs/fase2/RELATORIO.md`](docs/fase2/RELATORIO.md).
 
+## Visão orbital (menos cliques)
+
+- **Planeta no universo**: ao passar o cursor (ou ao aproximar com a roda) o planeta ganha um brilho suave e, **dentro da cena**, um resumo: um anel fino por grupo (na cor do grupo), o grupo como ponto mais claro e suas tarefas abertas mais importantes como pontos menores no mesmo anel. Nomes de grupos e de algumas tarefas aparecem como rótulos ancorados. Nada é aberto, a câmera não se move e o resumo some gradualmente quando o cursor sai. De longe só ficam os planetas e os indicadores (anel de progresso, urgência, contagem).
+- **Um clique no planeta**: a viagem cinematográfica é a mesma, mas ao chegar **todos** os grupos já mostram suas tarefas como satélites em órbitas compactas ao redor de cada lua, sem clicar em nenhuma. As tarefas mais urgentes / em andamento vêm primeiro; o que não cabe vira um “+N” no rótulo do grupo e uma pequena nuvem de satélites menores.
+- **Tarefa direto**: clicar no nome de uma tarefa (ou no satélite) abre os detalhes sem passar pelo grupo; editar, concluir, excluir e vincular continuam iguais.
+- **Foco no grupo**: clicar na lua continua levando ao grupo, onde as órbitas se abrem nas faixas de prioridade completas.
+- **Densidade**: o número de satélites individuais por grupo, o orçamento de nomes escritos e o nível de detalhe dependem do perfil gráfico, da quantidade de grupos e da largura da tela; colisões de texto são removidas por prioridade a cada quadro. Regras puras e testadas em `src/domain/overview.ts`. Detalhes e capturas: [`docs/orbital/RELATORIO.md`](docs/orbital/RELATORIO.md).
+
 ## Persistência
 
 Tudo é salvo em **IndexedDB** (`orbita`: `planets`, `groups`, `tasks`, `meta`) e sobrevive ao recarregar.
@@ -102,9 +110,10 @@ viagens de câmera; também configurável).
 
 ## Testes
 
-- `npm test` — 63 testes (layout sem sobreposição, urgência, transições do modelo, persistência em IndexedDB
+- `npm test` — testes de unidade, incluindo as regras de densidade da visão orbital (layout sem sobreposição, urgência, transições do modelo, persistência em IndexedDB
   simulado, backup e reparo, busca, comandos de produto com desfazer/reconciliação).
 - `npm run e2e:nav` — 13 verificações da navegação espacial (zoom ao cursor, entrada/saída por proximidade, continuidade, painéis, laboratório, movimento reduzido, colisão). Exige servidor de **desenvolvimento** (usa `window.__orbita` e um passo de simulação fixo, só em dev, para ser determinístico mesmo com WebGL por software).
+- `npm run e2e:orbital` — visão orbital: hover sem clique, um clique revelando grupos + tarefas, abrir tarefa direto, foco em grupo, muitos planetas, dezenas de tarefas, três resoluções e zoom (também em servidor de desenvolvimento).
 - `npm run e2e` — percorre os critérios de sucesso no navegador real e confere o conteúdo gravado no IndexedDB
   (criar planeta → grupos → tarefas → editar/concluir → mover → excluir/desfazer → busca → reorganizar →
   recarregar → exportar/apagar/importar). Usa WebGL por software, então roda sem GPU.

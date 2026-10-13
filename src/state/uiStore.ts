@@ -81,6 +81,10 @@ export interface UiState {
   autoQuality: Quality
   /** planet whose orbital system is being revealed / hidden while zooming (no navigation yet) */
   peekPlanetId: string | null
+  /** planets (at most a few) whose halo is detailed enough to carry labels */
+  haloPlanets: string[]
+  /** planets whose summary is at full detail (hovered / approached): their names are written */
+  haloLabelPlanets: string[]
   /** the next navigation continues from the current camera pose instead of re-framing */
   cameraKeep: boolean
   /** WebGL context could not be created */
@@ -110,6 +114,8 @@ export const uiStore = createStore<UiState>({
   navSeq: 0,
   autoQuality: 'high',
   peekPlanetId: null,
+  haloPlanets: [],
+  haloLabelPlanets: [],
   cameraKeep: false,
   webglFailed: false,
   announce: '',

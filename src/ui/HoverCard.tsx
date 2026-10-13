@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { Vector3 } from 'three'
-import { statsOf, tasksOfGroup, tasksOfPlanet } from '../domain/stats'
+import { statsOf, tasksOfPlanet } from '../domain/stats'
 import { describeDue } from '../domain/time'
 import { PRIORITY_LABEL, STATUS_LABEL } from '../domain/types'
 import { clockStore } from '../state/clock'
@@ -51,7 +51,8 @@ export function HoverCard() {
     return () => cancelAnimationFrame(raf)
   }, [key])
 
-  if (!hover || lab) return null
+  // planets and moons are explained inside the scene (PlanetHalo, satellites with names); a card is only kept for rearranging and for single tasks
+  if (!hover || lab || (hover.kind === 'planet' && !arrange) || hover.kind === 'group') return null
   let body: React.ReactNode
 
   if (hover.kind === 'planet') {
@@ -83,32 +84,6 @@ export function HoverCard() {
           {st.total === 0 && <span className="chip">Sem tarefas ainda</span>}
         </div>
         <div className="hc-sub" style={{ marginTop: 9 }}>{arrange ? 'Arraste para reposicionar' : 'Clique para entrar'}</div>
-      </>
-    )
-  } else if (hover.kind === 'group') {
-    const g = data.groups.find((x) => x.id === hover.id)
-    if (!g) return null
-    const planet = data.planets.find((x) => x.id === g.planetId)
-    const st = statsOf(tasksOfGroup(data.tasks, g.id), now)
-    body = (
-      <>
-        <div className="hc-head">
-          <span className="sym" style={{ color: g.color }}>●</span>
-          <span className="hc-title">{g.name}</span>
-        </div>
-        <div className="hc-sub">{planet?.name} · {plural(st.total, 'tarefa', 'tarefas')}</div>
-        {g.description && <div className="hc-desc">{g.description}</div>}
-        {st.total > 0 && (
-          <div className="hc-meter" aria-hidden="true">
-            <i style={{ width: `${Math.round(st.progress * 100)}%` }} />
-          </div>
-        )}
-        <div className="hc-row">
-          {st.doing > 0 && <span className="chip"><i style={{ color: '#7fb4ff' }} />{st.doing} em andamento</span>}
-          {st.overdueCount > 0 && <span className="chip bad"><i />{plural(st.overdueCount, 'atrasada', 'atrasadas')}</span>}
-          {st.total === 0 && <span className="chip">Vazio</span>}
-        </div>
-        <div className="hc-sub" style={{ marginTop: 9 }}>Clique para explorar</div>
       </>
     )
   } else {

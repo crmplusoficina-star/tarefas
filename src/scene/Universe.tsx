@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef } from 'react'
 import { AdditiveBlending, Color, Group, LineLoop, Mesh, Plane, Raycaster, ShaderMaterial, Vector2, Vector3, BufferGeometry, Float32BufferAttribute } from 'three'
 import { LANE_BASE, LANE_STEP, laneFromRadius, laneHeight, laneOmega, laneRadius, planetRadius, TAU } from '../domain/layout'
 import { statsOf, tasksOfPlanet, type Stats } from '../domain/stats'
+import { haloTarget } from '../domain/overview'
 import type { Planet } from '../domain/types'
 import { movePlanet, goPlanet } from '../state/commands'
 import { clockStore } from '../state/clock'
@@ -13,6 +14,8 @@ import { Beacon } from './Effects'
 import { sphereGeo } from './geometry'
 import { clamp01, damp, dampAngle, easeOutBack, wrapPi } from './math'
 import { PlanetBody, makeCtl } from './PlanetBody'
+import { PlanetHalo } from './PlanetHalo'
+import { useQualityTier } from './useQuality'
 import { usePickable } from './pick'
 import { ProgressRing } from './ProgressRing'
 import { runtime, anchor, forgetAnchor, stepDt } from './runtime'
@@ -299,7 +302,82 @@ export function Universe({ quality }: { quality: QualityProfile }) {
         <PlanetNode key={p.id} planet={p} stats={stats.get(p.id)!} quality={quality} />
       ))}
       <DragController />
+      <HaloDirector />
+      <HaloLayer />
     </group>
+  )
+}
+
+/* ------------------------------------------------- in-scene summary ("halo") */
+
+/**
+ * Decides, every frame, how much of the summary each planet shows: hovered or zoomed-on planets get
+ * the full one, big enough planets a quiet version, the rest none. The value is damped so it fades in
+ * quickly and lingers when the cursor leaves. At most a few planets are active at once.
+ */
+function HaloDirector() {
+  const tier = useQualityTier()
+  const limit = tier === 'low' ? 2 : 4
+  useFrame((_, dtRaw) => {
+    const cam = runtime.camera
+    const ui = uiStore.get()
+    const planets = dataStore.get().data.planets
+    const active = !ui.lab && levelOf(ui) === 'universe' && ui.mode !== 'arrange' && !runtime.drag
+    const dt = stepDt(dtRaw)
+    const tanHalf = cam ? Math.tan((cam.fov * Math.PI) / 360) : 1
+    const targets: [string, number][] = []
+    for (const p of planets) {
+      let t = 0
+      const c = runtime.pos.get(`p:${p.id}`)
+      if (active && cam && c) {
+        const pxRadius = ((runtime.size.get(`p:${p.id}`) ?? 1) * (runtime.height / 2)) / (cam.position.distanceTo(c) * tanHalf)
+        t = haloTarget({
+          pxRadius,
+          hovered: runtime.hoverPlanet === p.id,
+          zoomFocus: runtime.zoomFocus.key === `p:${p.id}` && runtime.zoomFocus.w > 0.5,
+        })
+        // once the real moons take over the summary steps aside
+        if (ui.peekPlanetId === p.id) t *= 1 - clamp01(runtime.reveal * 2.2)
+      }
+      targets.push([p.id, t])
+    }
+    targets.sort((a, b) => b[1] - a[1])
+    const ids: string[] = []
+    const named: string[] = []
+    const prevNamed = ui.haloLabelPlanets
+    // the quiet overview is only kept for the couple of most prominent planets: many planets must not clutter
+    let quiet = 0
+    targets.forEach(([id, t], i) => {
+      const goal = i < limit && (t >= 0.99 || quiet++ < 2) ? t : 0
+      const cur = runtime.halo.get(id) ?? 0
+      const next = runtime.reducedMotion ? goal : damp(cur, goal, goal > cur ? 9 : 2.4, dt)
+      if (next > 0.004) {
+        runtime.halo.set(id, next)
+        ids.push(id)
+        // names are written for the full summary, with a little hysteresis while it fades
+        if (goal >= 0.99 || (prevNamed.includes(id) && next > 0.62)) named.push(id)
+      } else runtime.halo.delete(id)
+    })
+    if (prevNamed.length !== named.length || prevNamed.some((x, i) => x !== named[i])) uiStore.set({ haloLabelPlanets: named })
+    const prev = ui.haloPlanets
+    if (prev.length !== ids.length || prev.some((x, i) => x !== ids[i])) uiStore.set({ haloPlanets: ids })
+  })
+  return null
+}
+
+function HaloLayer() {
+  const ids = useStore(uiStore, (s) => s.haloPlanets)
+  const planets = useStore(dataStore, (s) => s.data.planets)
+  const groups = useStore(dataStore, (s) => s.data.groups)
+  const tasks = useStore(dataStore, (s) => s.data.tasks)
+  return (
+    <>
+      {ids.map((id) => {
+        const planet = planets.find((p) => p.id === id)
+        if (!planet) return null
+        return <PlanetHalo key={id} planet={planet} allGroups={groups} allTasks={tasks} />
+      })}
+    </>
   )
 }
 
