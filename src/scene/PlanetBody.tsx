@@ -8,6 +8,8 @@ import { atmosphereVertex, cloudFragment, glowFragment, planetFragment, planetVe
 import type { QualityProfile } from './quality'
 import { hashString } from './math'
 
+const worldPos = new Vector3()
+
 /** Mutable control block the parent writes every frame (no React re-renders). */
 export interface BodyCtl {
   opacity: number
@@ -71,6 +73,7 @@ export function PlanetBody({ style, radius, ctl, quality, spin = 0.05 }: Props) 
           uDim: { value: 1 },
           uOct: { value: 5 },
           uBump: { value: 1 },
+          uClose: { value: 0 },
           uNormalMat: { value: new Matrix3() },
         },
       }),
@@ -115,6 +118,7 @@ export function PlanetBody({ style, radius, ctl, quality, spin = 0.05 }: Props) 
           uOpacity: { value: 1 },
           uKind: { value: 5 },
           uOct: { value: 4 },
+          uClose: { value: 0 },
         },
       }),
     [],
@@ -180,6 +184,12 @@ export function PlanetBody({ style, radius, ctl, quality, spin = 0.05 }: Props) 
     c.uOpacity!.value = ctl.opacity
     c.uLightDir!.value.copy(ctl.light)
     if (root.current) root.current.visible = ctl.opacity > 0.003
+    // how close the camera is, in planet radii: 0 beyond 7 R, 1 within 2 R (richer detail only when it can be seen)
+    if (surface.current && quality.tier !== 'low') {
+      surface.current.getWorldPosition(worldPos)
+      u.uClose!.value = Math.min(1, Math.max(0, (7 - worldPos.distanceTo(runtime.cam.pos) / radius) / 5))
+      cloudMat.uniforms.uClose!.value = u.uClose!.value
+    }
     if (surface.current) {
       if (!runtime.reducedMotion) surface.current.rotation.y += spin * dt
       u.uNormalMat!.value.getNormalMatrix(surface.current.matrixWorld)

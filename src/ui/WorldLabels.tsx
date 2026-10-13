@@ -6,6 +6,7 @@ import { levelOf, uiStore } from '../state/uiStore'
 import { useStore } from '../state/store'
 import { groupsOfPlanet, sortedPlanets } from '../domain/stats'
 import { PRIORITY_LABEL } from '../domain/types'
+import { cameraControl } from '../scene/cameraControl'
 import { runtime } from '../scene/runtime'
 import { STATUS_COLOR } from '../scene/Satellites'
 
@@ -91,6 +92,18 @@ export function WorldLabels() {
   const specsRef = useRef(specs)
   specsRef.current = specs
   const box = useRef<HTMLDivElement>(null)
+
+  // labels sit above the canvas: keep wheel zoom working when the cursor is over one
+  useEffect(() => {
+    const el = box.current
+    if (!el) return
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault()
+      cameraControl.wheel(e.clientX, e.clientY, e.deltaY, e.deltaMode)
+    }
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+  }, [])
 
   useEffect(() => {
     let raf = 0

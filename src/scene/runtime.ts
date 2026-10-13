@@ -48,7 +48,18 @@ export const runtime = {
   panelLeft: 0,
   panelRight: 0,
   fps: 60,
+  /** test hook: when set, every rendered frame advances the simulation by exactly this many seconds */
+  fixedDt: null as number | null,
+  /** hit meshes the camera rig may aim at (planets, moons, satellites): key → mesh */
+  pickables: new Map<string, import('three').Object3D>(),
+  /** 0..1 how much of the focused planet's orbital system is revealed while approaching it */
+  reveal: 0,
+  /** current zoom focus (object the camera is converging on) — also read by the e2e checks */
+  zoomFocus: { key: null as string | null, w: 0 },
 }
+
+/** Simulation step for a frame: clamped wall time, or the fixed test step. */
+export const stepDt = (raw: number) => runtime.fixedDt ?? Math.min(raw, 0.1)
 
 export function anchor(key: string): Vector3 {
   let v = runtime.pos.get(key)

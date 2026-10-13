@@ -79,6 +79,10 @@ export interface UiState {
   navSeq: number
   /** quality chosen automatically from measured FPS */
   autoQuality: Quality
+  /** planet whose orbital system is being revealed / hidden while zooming (no navigation yet) */
+  peekPlanetId: string | null
+  /** the next navigation continues from the current camera pose instead of re-framing */
+  cameraKeep: boolean
   /** WebGL context could not be created */
   webglFailed: boolean
   announce: string
@@ -105,6 +109,8 @@ export const uiStore = createStore<UiState>({
   flightUntil: 0,
   navSeq: 0,
   autoQuality: 'high',
+  peekPlanetId: null,
+  cameraKeep: false,
   webglFailed: false,
   announce: '',
 })

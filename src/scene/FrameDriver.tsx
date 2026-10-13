@@ -4,7 +4,7 @@ import { DirectionalLight, Vector3 } from 'three'
 import { dataStore } from '../state/dataStore'
 import { levelOf, pushToast, uiStore } from '../state/uiStore'
 import { resolveQuality } from './quality'
-import { runtime } from './runtime'
+import { runtime, stepDt } from './runtime'
 
 /** Advances the orbit clocks and watches frame times to degrade gracefully on weak GPUs. */
 export function FrameDriver() {
@@ -27,7 +27,7 @@ export function FrameDriver() {
   }, [])
 
   useFrame((_, dtRaw) => {
-    const dt = Math.min(dtRaw, 0.1)
+    const dt = stepDt(dtRaw)
     const ui = uiStore.get()
     const settings = dataStore.get().data.settings
     const level = levelOf(ui)

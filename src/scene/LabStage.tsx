@@ -9,7 +9,7 @@ import { damp } from './math'
 import { makeCtl, PlanetBody } from './PlanetBody'
 import { ProgressRing } from './ProgressRing'
 import type { QualityProfile } from './quality'
-import { LAB_STAGE, runtime } from './runtime'
+import { LAB_STAGE, runtime, stepDt } from './runtime'
 
 /** The formation chamber: a live preview of the planet being designed. */
 export function LabStage({ quality }: { quality: QualityProfile }) {
@@ -21,7 +21,7 @@ export function LabStage({ quality }: { quality: QualityProfile }) {
 
   useFrame((_, dt) => {
     const target = uiStore.get().lab ? 1 : 0
-    presence.current = runtime.reducedMotion ? target : damp(presence.current, target, target ? 2.4 : 6, Math.min(dt, 0.1))
+    presence.current = runtime.reducedMotion ? target : damp(presence.current, target, target ? 2.4 : 6, stepDt(dt))
     ctl.opacity = presence.current
     ctl.light.set(0.78, 0.32, 0.5).normalize()
     if (root.current) {

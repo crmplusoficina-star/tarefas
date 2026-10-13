@@ -13,8 +13,9 @@ import { Beacon } from './Effects'
 import { sphereGeo } from './geometry'
 import { clamp01, damp, dampAngle, easeOutBack, wrapPi } from './math'
 import { PlanetBody, makeCtl } from './PlanetBody'
+import { usePickable } from './pick'
 import { ProgressRing } from './ProgressRing'
-import { runtime, anchor, forgetAnchor } from './runtime'
+import { runtime, anchor, forgetAnchor, stepDt } from './runtime'
 import type { QualityProfile } from './quality'
 import { orbitFragment, orbitVertex } from './shaders/misc'
 
@@ -89,9 +90,10 @@ function PlanetNode({ planet, stats, quality }: NodeProps) {
   planetRef.current = planet
 
   useEffect(() => () => forgetAnchor(key), [key])
+  usePickable(hit, key)
 
   useFrame((_, dtRaw) => {
-    const dt = Math.min(dtRaw, 0.1)
+    const dt = stepDt(dtRaw)
     const g = root.current
     if (!g) return
     const p = planetRef.current
@@ -100,7 +102,9 @@ function PlanetNode({ planet, stats, quality }: NodeProps) {
     const level = levelOf(ui)
     const forming = ui.forming?.id === p.id
     const wantsVisible = !ui.lab && (level === 'universe' || ui.planetId === p.id)
-    const target = wantsVisible ? 1 : 0
+    // while zooming into one planet its neighbours recede, so the approach reads as a focus
+    const receding = level === 'universe' && ui.peekPlanetId !== null && ui.peekPlanetId !== p.id
+    const target = wantsVisible ? (receding ? 1 - 0.65 * runtime.reveal : 1) : 0
     o.presence = runtime.reducedMotion ? target : damp(o.presence, target, wantsVisible ? 3.2 : 4.5, dt)
 
     // orbit
