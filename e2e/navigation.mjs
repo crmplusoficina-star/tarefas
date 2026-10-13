@@ -333,9 +333,10 @@ await check(page, 'F. girar, deslocar e centralizar depois do zoom (sem pulos de
   assert(before.level === 'universe' && before.focus.key, 'precisa estar com foco no universo')
   // rotate (left drag on empty space): the target must not jump when the focus is released
   await A.startRec()
-  await page.mouse.move(150, 560)
+  // empty canvas (no HUD, no label, no planet): top middle
+  await page.mouse.move(620, 120)
   await page.mouse.down()
-  await page.mouse.move(260, 540, { steps: 8 })
+  await page.mouse.move(740, 100, { steps: 8 })
   await page.mouse.up()
   await A.frames(40)
   let rec = await A.stopRec()
@@ -343,9 +344,9 @@ await check(page, 'F. girar, deslocar e centralizar depois do zoom (sem pulos de
   assert((await A.state()).focus.key === null, 'girar deveria soltar o foco do zoom')
   // pan (right drag)
   const t0 = (await A.state()).target
-  await page.mouse.move(200, 560)
+  await page.mouse.move(620, 140)
   await page.mouse.down({ button: 'right' })
-  await page.mouse.move(320, 520, { steps: 8 })
+  await page.mouse.move(740, 190, { steps: 8 })
   await page.mouse.up({ button: 'right' })
   await A.frames(40)
   const t1 = (await A.state()).target
