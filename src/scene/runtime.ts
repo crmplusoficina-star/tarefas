@@ -1,0 +1,62 @@
+import { Vector3, type PerspectiveCamera } from 'three'
+
+/**
+ * Mutable, per-frame state shared between the 3D scene, the camera rig and the
+ * DOM overlays (labels, radar). Never put it in React state: it changes 60×/s.
+ */
+export interface OrbitView {
+  radius: number
+  angle: number
+  ready: boolean
+}
+
+export const runtime = {
+  /** wall clock (s) – shader time */
+  time: 0,
+  /** orbit clocks (already multiplied by user speed and smoothed) */
+  tU: 0,
+  tP: 0,
+  tG: 0,
+  /** smoothed speed factors 0..1 */
+  fU: 1,
+  fP: 1,
+  fG: 1,
+  reducedMotion: false,
+  camera: null as PerspectiveCamera | null,
+  width: 1,
+  height: 1,
+  /** camera rig state exposed for the radar / labels */
+  cam: { az: 0, pol: 1, dist: 50, target: new Vector3(), pos: new Vector3() },
+  /** world positions of interactive anchors: 'p:<id>', 'g:<id>', 't:<id>' … */
+  pos: new Map<string, Vector3>(),
+  /** visual radius of an anchor (world units) for label offsets */
+  size: new Map<string, number>(),
+  /** planet currently being dragged in arrange mode */
+  drag: null as null | { id: string; radius: number; angle: number; lane: number },
+  /** true while the pointer is over a pickable object */
+  hovering: false,
+  /** planet under the pointer (used to disable camera drag while rearranging) */
+  hoverPlanet: null as string | null,
+  /** lane highlighted while dragging a planet */
+  laneHighlight: null as number | null,
+  /** set by the camera rig when the user dragged the view (suppresses click) */
+  dragMoved: false,
+  /** side panel occupying part of the viewport (px) so the scene can be re-centred */
+  panelLeft: 0,
+  panelRight: 0,
+  fps: 60,
+}
+
+export function anchor(key: string): Vector3 {
+  let v = runtime.pos.get(key)
+  if (!v) {
+    v = new Vector3()
+    runtime.pos.set(key, v)
+  }
+  return v
+}
+
+export function forgetAnchor(key: string) {
+  runtime.pos.delete(key)
+  runtime.size.delete(key)
+}
