@@ -51,7 +51,8 @@ export function WorldLabels() {
           ref: { kind: 'planet', id: p.id },
         })
     } else if (ui.planetId) {
-      for (const g of groupsOfPlanet(data.groups, ui.planetId))
+      // inside a group only that group stays on screen; the other moons are hidden in the scene
+      for (const g of groupsOfPlanet(data.groups, ui.planetId).filter((x) => !ui.groupId || x.id === ui.groupId))
         out.push({
           key: `g:${g.id}`,
           anchor: `g:${g.id}`,
@@ -176,8 +177,8 @@ export function WorldLabels() {
         const content = (
           <>
             {s.kind === 'task' && <span className="pip" style={{ background: s.color }} />}
-            {s.kind === 'group' && <span className="pip" style={{ background: s.color }} />}
-            {s.symbol && s.kind !== 'group' && <span className="sym">{s.symbol}</span>}
+            {s.kind === 'group' && !s.symbol && <span className="pip" style={{ background: s.color }} />}
+            {s.symbol && <span className="sym" style={s.kind === 'group' ? { color: s.color } : undefined}>{s.symbol}</span>}
             <span>{s.text}</span>
           </>
         )
