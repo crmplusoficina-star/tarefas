@@ -123,6 +123,20 @@ describe('proximity intent (never open a category by accident)', () => {
     expect(gesture(newIntent(), 9, null, planet({ dist: d.exit + 1 }), 1.12)).toBe('exit')
   })
 
+  it('leaving does not depend on what the cursor passes over while zooming out', () => {
+    const s = newIntent()
+    const c = ctx({ level: 'planet', target: null, dist: d.exit + 1 })
+    let result = 'none'
+    for (let i = 0; i < 9; i++) {
+      intentWheel(s, i % 2 ? 'g:moon' : null, 1.12) // cursor alternates between a moon and empty space
+      for (let k = 0; k < 3; k++) {
+        const r = intentStep(s, 1 / 60, c)
+        if (r !== 'none') result = r
+      }
+    }
+    expect(result).toBe('exit')
+  })
+
   it('reveal ramps 0→1 between the reveal start and the entry distance', () => {
     expect(revealAmount(d.revealStart + 3, d.enter, d.revealStart)).toBe(0)
     expect(revealAmount(d.enter - 2, d.enter, d.revealStart)).toBe(1)

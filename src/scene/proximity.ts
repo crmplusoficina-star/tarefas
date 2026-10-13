@@ -34,11 +34,15 @@ export const newIntent = (): IntentState => ({ key: null, zoomIn: 0, zoomOut: 0,
 
 /** Register a wheel step (`factor` < 1 zooms in) aimed at `key` (null = empty space). */
 export function intentWheel(s: IntentState, key: string | null, factor: number, p = PROXIMITY): void {
-  if (key !== s.key || s.clock - s.lastWheel > p.forget) {
-    s.key = key
+  if (s.clock - s.lastWheel > p.forget) {
     s.zoomIn = 0
     s.zoomOut = 0
     s.held = 0
+  }
+  // entering needs the SAME target all along; leaving only needs a sustained zoom-out
+  if (key !== s.key) {
+    s.key = key
+    s.zoomIn = 0
   }
   const g = -Math.log(factor)
   if (g > 0) {

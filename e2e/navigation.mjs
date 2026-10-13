@@ -19,7 +19,9 @@ mkdirSync(SHOTS, { recursive: true })
 
 const results = []
 let n = 0
+const ONLY = process.env.ONLY // e.g. ONLY=F runs just the checks whose name starts with "F."
 async function check(page, name, fn) {
+  if (ONLY && !name.startsWith(ONLY) && !name.startsWith('nenhum erro')) return
   n++
   const t0 = Date.now()
   try {
