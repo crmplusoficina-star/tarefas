@@ -13,9 +13,10 @@ import { Beacon } from './Effects'
 import { FaceCamera } from './FaceCamera'
 import { sphereGeo } from './geometry'
 import { clamp01, damp, dampAngle, easeOutBack } from './math'
+import { usePickable } from './pick'
 import { ProgressRing } from './ProgressRing'
 import type { QualityProfile } from './quality'
-import { anchor, forgetAnchor, runtime } from './runtime'
+import { anchor, forgetAnchor, runtime, stepDt } from './runtime'
 import { LinkLines } from './LinkLines'
 import { orbitFragment, orbitVertex } from './shaders/misc'
 
@@ -93,9 +94,10 @@ function Satellite({ task, slot, bandTilt, center, quality, mats, presence }: Sa
   const s0 = PRIORITY_SCALE[task.priority]
 
   useEffect(() => () => forgetAnchor(key), [key])
+  usePickable(hit, key)
 
   useFrame((_, dtRaw) => {
-    const dt = Math.min(dtRaw, 0.1)
+    const dt = stepDt(dtRaw)
     const g = root.current
     if (!g) return
     const t = taskRef.current

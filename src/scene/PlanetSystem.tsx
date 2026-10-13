@@ -15,9 +15,10 @@ import { Beacon } from './Effects'
 import { sphereGeo } from './geometry'
 import { clamp01, damp, dampAngle, hashString } from './math'
 import { makeCtl, PlanetBody } from './PlanetBody'
+import { usePickable } from './pick'
 import { ProgressRing } from './ProgressRing'
 import type { QualityProfile } from './quality'
-import { anchor, forgetAnchor, runtime } from './runtime'
+import { anchor, forgetAnchor, runtime, stepDt } from './runtime'
 import { orbitFragment, orbitVertex } from './shaders/misc'
 import { SatelliteSystem, STATUS_COLOR } from './Satellites'
 import { Station } from './Station'
@@ -159,9 +160,10 @@ function MoonNode({ group, slot, stats, tasks, planetKey, quality, index }: Moon
   const R = MOON_RADIUS
 
   useEffect(() => () => forgetAnchor(key), [key])
+  usePickable(hit, key)
 
   useFrame((_, dtRaw) => {
-    const dt = Math.min(dtRaw, 0.1)
+    const dt = stepDt(dtRaw)
     const g = root.current
     const center = runtime.pos.get(planetKey)
     if (!g || !center) return
@@ -170,9 +172,11 @@ function MoonNode({ group, slot, stats, tasks, planetKey, quality, index }: Moon
     const ui = uiStore.get()
     const level = levelOf(ui)
     const inGroup = ui.groupId === group.id
-    const wants = !ui.lab && (level === 'planet' || inGroup)
-    const target = wants ? 1 : 0
-    o.presence = runtime.reducedMotion ? target : damp(o.presence, target, wants ? 3 : 5, dt)
+    const peeking = !ui.planetId && ui.peekPlanetId === group.planetId
+    const wants = !ui.lab && (level === 'planet' || inGroup || peeking)
+    // while the planet is only being approached, the moons appear in step with the camera
+    const target = wants ? (peeking ? runtime.reveal : 1) : 0
+    o.presence = runtime.reducedMotion ? target : damp(o.presence, target, peeking ? 8 : wants ? 3 : 5, dt)
     o.focus = runtime.reducedMotion ? (inGroup ? 1 : 0) : damp(o.focus, inGroup ? 1 : 0, 3.2, dt)
 
     const tAngle = sl.phase + sl.omega * runtime.tP
@@ -298,7 +302,8 @@ function MoonLane({ radius, tilt, planetKey, presence }: { radius: number; tilt:
 /* ------------------------------------------------------------- the layer */
 
 export function PlanetSystem({ quality }: { quality: QualityProfile }) {
-  const planetId = useStore(uiStore, (s) => s.planetId)
+  // the open planet, or the one whose moons are being revealed (zooming in) / hidden (zooming out)
+  const planetId = useStore(uiStore, (s) => s.planetId ?? s.peekPlanetId)
   const planet = useStore(dataStore, (s) => s.data.planets.find((p) => p.id === planetId) ?? null)
   if (!planet) return null
   return <PlanetSystemInner key={planet.id} planet={planet} quality={quality} />
@@ -316,8 +321,10 @@ function PlanetSystemInner({ planet, quality }: { planet: Planet; quality: Quali
   const presence = useRef({ current: 0 })
 
   useFrame((_, dt) => {
-    const target = lab || !uiStore.get().planetId ? 0 : 1
-    presence.current.current = runtime.reducedMotion ? target : damp(presence.current.current, target, 3, dt)
+    const ui = uiStore.get()
+    // lanes follow the reveal while the planet is only being approached
+    const target = lab ? 0 : ui.planetId ? 1 : ui.peekPlanetId === planet.id ? runtime.reveal : 0
+    presence.current.current = runtime.reducedMotion ? target : damp(presence.current.current, target, 6, stepDt(dt))
   })
 
   const laneSet = useMemo(() => {

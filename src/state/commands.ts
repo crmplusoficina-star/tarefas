@@ -47,7 +47,9 @@ function closeTransient() {
 }
 
 export function goUniverse() {
-  uiStore.set({ planetId: null, groupId: null, taskId: null, taskPanel: null, mode: uiStore.get().mode })
+  // keep the moons on screen while they fade out instead of popping away
+  const leaving = uiStore.get().planetId
+  uiStore.set({ planetId: null, groupId: null, taskId: null, taskPanel: null, mode: uiStore.get().mode, peekPlanetId: leaving ?? uiStore.get().peekPlanetId })
   closeTransient()
   startFlight()
   announce(describeLocation())
@@ -56,9 +58,30 @@ export function goUniverse() {
 export function goPlanet(id: string) {
   const planet = data().planets.find((p) => p.id === id)
   if (!planet) return
-  uiStore.set({ planetId: id, groupId: null, taskId: null, taskPanel: null, mode: 'explore' })
+  uiStore.set({ planetId: id, groupId: null, taskId: null, taskPanel: null, mode: 'explore', peekPlanetId: null })
   closeTransient()
   startFlight()
+  announce(describeLocation())
+}
+
+/**
+ * Zooming close to a planet opens its category. Unlike a click there is no "flight": the
+ * camera keeps its pose and simply changes what it is orbiting, so nothing jumps.
+ */
+export function enterPlanetByProximity(id: string) {
+  const planet = data().planets.find((p) => p.id === id)
+  if (!planet) return
+  uiStore.set((s) => ({ planetId: id, groupId: null, taskId: null, taskPanel: null, mode: 'explore', peekPlanetId: null, cameraKeep: true, navSeq: s.navSeq + 1, hover: null }))
+  closeTransient()
+  announce(describeLocation())
+}
+
+/** Zooming far away from an open planet returns to the universe, again without re-framing. */
+export function exitPlanetByProximity() {
+  const leaving = uiStore.get().planetId
+  if (!leaving) return
+  uiStore.set((s) => ({ planetId: null, groupId: null, taskId: null, taskPanel: null, peekPlanetId: leaving, cameraKeep: true, navSeq: s.navSeq + 1, hover: null }))
+  closeTransient()
   announce(describeLocation())
 }
 

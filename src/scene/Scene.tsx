@@ -11,7 +11,7 @@ import { FrameDriver, SunLight } from './FrameDriver'
 import { LabStage } from './LabStage'
 import { PlanetSystem } from './PlanetSystem'
 import { PROFILES, resolveQuality } from './quality'
-import { runtime } from './runtime'
+import { runtime, stepDt } from './runtime'
 import { Universe } from './Universe'
 import { useFrame } from '@react-three/fiber'
 import { damp } from './math'
@@ -20,7 +20,7 @@ function SunPresence({ presence }: { presence: { current: number } }) {
   useFrame((_, dt) => {
     const s = uiStore.get()
     const target = s.lab ? 0 : levelOf(s) === 'universe' ? 1 : 0.0
-    presence.current = runtime.reducedMotion ? target : damp(presence.current, target, 3, Math.min(dt, 0.1))
+    presence.current = runtime.reducedMotion ? target : damp(presence.current, target, 3, stepDt(dt))
   })
   return null
 }
