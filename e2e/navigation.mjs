@@ -443,6 +443,42 @@ await check(page, 'K. o clique continua funcionando como alternativa independent
   assert((await A.state()).level === 'universe', 'Esc não voltou')
 })
 
+/* ------------------------------------------------------------------ L */
+await check(page, 'L. a câmera nunca atravessa a estrela nem um planeta, mesmo forçando o zoom', async () => {
+  await page.keyboard.press('c')
+  await A.frames(90)
+  // 1) straight at the star
+  const sunPx = await page.evaluate(() => {
+    const r = window.__orbita.runtime
+    const v = new r.cam.pos.constructor(0, 0, 0).project(r.camera)
+    return { x: (v.x * 0.5 + 0.5) * r.width, y: (-v.y * 0.5 + 0.5) * r.height }
+  })
+  await A.startRec()
+  await A.wheel(sunPx.x, sunPx.y, -120, 30, 4)
+  await A.frames(40)
+  let rec = await A.stopRec()
+  const sunClear = Math.min(...rec.pos.map((p) => Math.hypot(...p) / 4.2))
+  assert(sunClear > 1.2, `a câmera entrou na estrela (folga mínima ${sunClear.toFixed(2)}× o raio)`)
+  // 2) straight into a planet while "arrange" mode keeps proximity-entry off
+  await page.keyboard.press('c')
+  await A.frames(90)
+  await page.keyboard.press('r')
+  await A.frames(10)
+  const R = await page.evaluate((id) => window.__orbita.runtime.size.get(`p:${id}`), viagens)
+  const at = await A.screen(`p:${viagens}`)
+  await A.startRec()
+  await A.wheel(at.x, at.y, -120, 40, 4, `p:${viagens}`)
+  await A.frames(40)
+  rec = await A.stopRec()
+  const pp = await page.evaluate((id) => window.__orbita.runtime.pos.get(`p:${id}`).toArray(), viagens)
+  const planetClear = Math.min(...rec.pos.map((p) => A.dist3(p, pp) / R))
+  assert(planetClear > 1.2, `a câmera entrou no planeta (folga mínima ${planetClear.toFixed(2)}× o raio)`)
+  assert((await A.state()).level === 'universe', 'o modo reorganizar não deveria abrir categorias')
+  await page.keyboard.press('r')
+  await page.keyboard.press('c')
+  await A.frames(90)
+})
+
 const fatalA = A.errors.filter((e) => !/THREE\.Clock|DevTools/.test(e))
 await check(page, 'nenhum erro de console nos cenários A–H e K', async () => {
   assert(fatalA.length === 0, fatalA.slice(0, 3).join(' | '))
