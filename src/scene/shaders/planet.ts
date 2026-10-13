@@ -104,6 +104,12 @@ void main(){
     vec3 shallow = mix(uA, uC, 0.28) * 1.1;
     vec3 water = mix(deep, shallow, depth);
     vec3 earth = mix(uB, uB * 0.5 + uA * 0.12, smoothstep(thr, thr + 0.28, land));
+    if (uClose > 0.02) {
+      // close up: terrain texture on land, ripples on the water
+      float micro = fbm(q * 13.0 + 5.0, 4);
+      earth *= 0.78 + 0.44 * micro * (0.3 + 0.7 * uClose);
+      water *= 0.9 + 0.2 * fbm(q * 26.0 + 2.0, 3) * uClose;
+    }
     float ice = smoothstep(0.8, 0.93, abs(p.y) + (fbm(q * 2.0, 3) - 0.5) * 0.14);
     vec3 c = mix(mix(water, earth, w), uC, ice);
     albedo += c * uMix.z;
@@ -159,7 +165,7 @@ void main(){
   float ndl = dot(N, L);
   float diff = clamp((ndl + 0.1) / 1.1, 0.0, 1.0);
   // skylight: a cool fill plus a little of the atmosphere colour, so the night side stays legible
-  vec3 ambient = vec3(0.105, 0.125, 0.18) + uAtmo * uAtmoI * 0.05;
+  vec3 ambient = vec3(0.075, 0.09, 0.13) + uAtmo * uAtmoI * 0.04;
   vec3 sun = vec3(1.0, 0.94, 0.85) * 1.42;
   vec3 col = albedo * (ambient + sun * diff);
 
@@ -176,6 +182,10 @@ void main(){
   float fr = pow(1.0 - max(dot(N0, V), 0.0), 3.0);
   col += uAtmo * fr * uAtmoI * 0.3 * smoothstep(-0.35, 0.5, dot(N0, L));
   col += uAtmo * fr * uAtmoI * 0.08 * (1.0 - smoothstep(-0.35, 0.3, dot(N0, L)));
+
+  // legibility floor: even in full shadow the surface keeps a faint, hue-true trace of itself
+  float peak = max(max(albedo.r, albedo.g), max(albedo.b, 1e-3));
+  col = max(col, (albedo / peak) * 0.016 * (0.5 + 0.5 * uAtmoI));
 
   col *= uDim;
   gl_FragColor = vec4(col, uOpacity);
