@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef } from 'react'
 import { Vector3 } from 'three'
-import { goGroup, goPlanet, openNewTask, selectTask } from '../state/commands'
+import { goGroup, goPlanet, selectTask } from '../state/commands'
 import { dataStore } from '../state/dataStore'
 import { levelOf, uiStore } from '../state/uiStore'
 import { useStore } from '../state/store'
@@ -19,11 +19,6 @@ interface Spec {
   color?: string
   done?: boolean
   priority: number
-  /** Compact task preview shown as soon as the planet opens. */
-  preview?: { id: string; title: string; color: string; done: boolean }[]
-  previewTotal?: number
-  previewMore?: number
-  groupId?: string
   onClick?: () => void
   /** hover/select id used to promote the label */
   ref?: { kind: 'planet' | 'group' | 'task'; id: string }
@@ -58,13 +53,7 @@ export function WorldLabels() {
         })
     } else if (ui.planetId) {
       // inside a group only that group stays on screen; the other moons are hidden in the scene
-      for (const g of groupsOfPlanet(data.groups, ui.planetId).filter((x) => !ui.groupId || x.id === ui.groupId)) {
-        const overview = level === 'planet' && showAll
-        const groupTasks = overview ? data.tasks.filter((t) => t.groupId === g.id) : []
-        const ranks = { critical: 0, high: 1, medium: 2, low: 3 }
-        const previewTasks = [...groupTasks].sort(
-          (a, b) => Number(a.status === 'done') - Number(b.status === 'done') || ranks[a.priority] - ranks[b.priority],
-        )
+      for (const g of groupsOfPlanet(data.groups, ui.planetId).filter((x) => !ui.groupId || x.id === ui.groupId))
         out.push({
           key: `g:${g.id}`,
           anchor: `g:${g.id}`,
@@ -72,15 +61,10 @@ export function WorldLabels() {
           text: g.name,
           symbol: g.symbol || undefined,
           color: g.color,
-          priority: ui.groupId === g.id ? 60 : showAll ? 55 : -1,
+          priority: ui.groupId === g.id ? 60 : showAll ? 40 : -1,
           onClick: () => goGroup(g.id),
-          groupId: g.id,
-          preview: overview ? previewTasks.slice(0, 3).map((t) => ({ id: t.id, title: t.title, color: STATUS_COLOR[t.status], done: t.status === 'done' })) : undefined,
-          previewTotal: groupTasks.length,
-          previewMore: Math.max(0, groupTasks.length - 3),
           ref: { kind: 'group', id: g.id },
         })
-      }
       if (ui.groupId) {
         const tasks = data.tasks.filter((t) => t.groupId === ui.groupId)
         for (const t of tasks)
@@ -124,12 +108,7 @@ export function WorldLabels() {
   useEffect(() => {
     let raf = 0
     const sizes = new Map<string, { w: number; h: number }>()
-    let lastSpecs = specsRef.current
     const loop = () => {
-      if (specsRef.current !== lastSpecs) {
-        sizes.clear()
-        lastSpecs = specsRef.current
-      }
       raf = requestAnimationFrame(loop)
       const cam = runtime.camera
       const W = box.current?.clientWidth ?? runtime.width
@@ -168,39 +147,29 @@ export function WorldLabels() {
         const world = runtime.size.get(it.s.anchor) ?? 0.5
         const pxR = (world * (H / 2)) / (it.dist * tanHalf)
         const isBand = it.s.kind === 'band'
-        const isOverview = it.s.kind === 'group' && it.s.preview !== undefined
-        const clampX = (candidate: number) => Math.max(sz.w / 2 + 12, Math.min(W - sz.w / 2 - 12, candidate))
-        const choices = isOverview
-          ? [
-              { x: clampX(x), y: y + pxR + 12 },
-              { x: clampX(x), y: y - pxR - sz.h - 12 },
-              { x: clampX(x + sz.w / 2 + pxR + 18), y: y - sz.h / 2 },
-              { x: clampX(x - sz.w / 2 - pxR - 18), y: y - sz.h / 2 },
-            ]
-          : [{ x, y: isBand ? y : y + pxR + 12 }]
-        const overlaps = (px: number, py: number) =>
-          placed.some((r) => px - sz.w / 2 - 4 < r.x1 && px + sz.w / 2 + 4 > r.x0 && py - 2 < r.y1 && py + sz.h + 2 > r.y0)
-        const inside = (py: number) => py >= 70 && py + sz.h <= H - 66
-        let position = choices[0]!
+        const ly = isBand ? y : y + pxR + 12
+        const x0 = x - sz.w / 2 - 4
+        const x1 = x + sz.w / 2 + 4
+        const y0 = ly - 2
+        const y1 = ly + sz.h + 2
         let show = !behind && it.s.priority >= 0
         if (it.hot || el === focused) show = !behind
         if (show && it.s.kind === 'task' && !it.hot && state.groupId) {
           // many satellites: only show prominent labels when zoomed out
           show = pxR > 5
         }
-        if (show) {
-          if (isOverview) {
-            const free = choices.find((p) => inside(p.y) && !overlaps(p.x, p.y))
-            if (free) position = free
-            else if (!it.hot && el !== focused) show = false
-          } else if (!it.hot && el !== focused && overlaps(position.x, position.y)) {
-            show = false
+        if (show && !it.hot && el !== focused) {
+          for (const r of placed) {
+            if (x0 < r.x1 && x1 > r.x0 && y0 < r.y1 && y1 > r.y0) {
+              show = false
+              break
+            }
           }
         }
         if (show) {
-          placed.push({ x0: position.x - sz.w / 2 - 4, x1: position.x + sz.w / 2 + 4, y0: position.y - 2, y1: position.y + sz.h + 2 })
+          placed.push({ x0, y0, x1, y1 })
           visible.add(it.s.key)
-          el.style.transform = `translate3d(${Math.round(position.x - sz.w / 2)}px, ${Math.round(position.y)}px, 0)`
+          el.style.transform = `translate3d(${Math.round(x - sz.w / 2)}px, ${Math.round(ly)}px, 0)`
           el.classList.toggle('hot', it.hot)
         }
         el.classList.toggle('hidden', !show)
@@ -226,46 +195,6 @@ export function WorldLabels() {
             <span>{s.text}</span>
           </>
         )
-        if (s.kind === 'group' && s.preview) {
-          return (
-            <div
-              key={s.key}
-              ref={(el) => {
-                if (el) els.current.set(s.key, el)
-                else els.current.delete(s.key)
-              }}
-              className={`${cls} orbit-preview`}
-              data-testid={`orbit-preview-${s.groupId}`}
-            >
-              <button type="button" className="orbit-preview-heading" onClick={s.onClick} aria-label={`Grupo ${s.text}`}>
-                {s.symbol ? <span className="sym" style={{ color: s.color }}>{s.symbol}</span> : <span className="pip" style={{ background: s.color }} />}
-                <span className="orbit-preview-name">{s.text}</span>
-                <span className="orbit-preview-count">{s.previewTotal}</span>
-              </button>
-              <div className="orbit-preview-tasks">
-                {s.preview.length === 0 ? (
-                  <span className="orbit-preview-empty">Nenhuma tarefa</span>
-                ) : s.preview.map((t) => (
-                  <button
-                    type="button"
-                    key={t.id}
-                    className={`orbit-task-chip ${t.done ? 'done' : ''}`}
-                    title={t.title}
-                    aria-label={`Abrir tarefa ${t.title}`}
-                    onClick={() => selectTask(t.id)}
-                  >
-                    <span className="pip" style={{ background: t.color }} />
-                    <span>{t.title}</span>
-                  </button>
-                ))}
-              </div>
-              <div className="orbit-preview-footer">
-                {s.previewMore ? <button type="button" onClick={s.onClick}>+{s.previewMore} outras</button> : <span />}
-                <button type="button" onClick={() => s.groupId && openNewTask({ groupId: s.groupId })}>+ Tarefa</button>
-              </div>
-            </div>
-          )
-        }
         return s.onClick ? (
           <button
             key={s.key}

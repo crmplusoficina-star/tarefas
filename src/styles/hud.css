@@ -479,59 +479,6 @@
   flex: none;
 }
 
-
-/* Task bubbles surface directly over each moon when a planet opens. */
-.wl.orbit-preview {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  width: 202px;
-  max-width: 202px;
-  gap: 7px;
-  padding: 10px;
-  border-radius: 15px;
-  white-space: normal;
-  background: linear-gradient(150deg, rgba(13, 21, 38, 0.92), rgba(5, 10, 23, 0.83));
-  border: 1px solid rgba(161, 186, 223, 0.34);
-  box-shadow: 0 14px 35px rgba(0, 0, 0, 0.35), inset 0 1px rgba(255, 255, 255, 0.06);
-}
-.orbit-preview-heading, .orbit-preview-footer button, .orbit-task-chip {
-  all: unset;
-  box-sizing: border-box;
-  cursor: pointer;
-}
-.orbit-preview-heading {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  min-width: 0;
-  font-weight: 650;
-  font-size: 12px;
-}
-.orbit-preview-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.orbit-preview-count { font: 11px var(--font-mono); color: var(--ink-3); }
-.orbit-preview-tasks { display: flex; flex-wrap: wrap; gap: 5px; }
-.orbit-task-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  max-width: 100%;
-  min-width: 0;
-  padding: 5px 7px;
-  border-radius: 9px;
-  background: rgba(123, 153, 205, 0.12);
-  border: 1px solid rgba(148, 172, 215, 0.17);
-  font-size: 11px;
-  line-height: 1.2;
-}
-.orbit-task-chip > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.orbit-task-chip.done { opacity: 0.52; text-decoration: line-through; }
-.orbit-preview-heading:hover, .orbit-preview-footer button:hover, .orbit-task-chip:hover { color: var(--gold); }
-.orbit-preview-heading:focus-visible, .orbit-preview-footer button:focus-visible, .orbit-task-chip:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
-.orbit-preview-empty { font-size: 11px; color: var(--ink-3); }
-.orbit-preview-footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 10px; color: var(--ink-3); }
-.orbit-preview-footer button:last-child { color: var(--gold); }
-
 /* ------------------------------------------------------------ hover card */
 .hover-card {
   position: absolute;
