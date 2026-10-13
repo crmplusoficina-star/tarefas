@@ -38,7 +38,7 @@ Requer Node 20+ e um navegador moderno com WebGL (há um modo de contingência s
   data de conclusão (automática e editável), conexões, e mover entre grupos **e planetas**.
 - **Indicadores no próprio universo**: anel de progresso do planeta/lua, sinal de urgência, estação quando um
   grupo tem muitas tarefas em andamento, radar de localização e *breadcrumb*.
-- **Navegação**: arrastar para girar, botão direito/Shift para mover, roda para zoom, clique para entrar,
+- **Navegação**: arrastar para girar, botão direito/Shift para mover, **roda para zoom direcionado ao cursor** (aproxime um planeta e a câmera converge para ele; continue e a categoria abre sozinha), clique para entrar,
   busca global (`Ctrl K`), dock de planetas (`1`–`9`, `[` `]`), centralizar câmera (`C`), radar clicável.
 - **Reorganizar** (`R`): arraste planetas entre as órbitas; o universo encaixa na vaga livre mais próxima.
 - **Personalização**: renomear o universo, efeitos gráficos (automático/mínimo/equilibrado/cinematográfico),
@@ -47,6 +47,13 @@ Requer Node 20+ e um navegador moderno com WebGL (há um modo de contingência s
   reparo automático de registros corrompidos, aviso quando o armazenamento local não está disponível.
 
 Atalhos: `?` abre a lista completa dentro do app.
+
+## Navegação espacial (fase 2)
+
+- **Zoom ao cursor**: a roda aproxima/afasta em direção ao que está sob o cursor, sem clique prévio. Sobre um planeta (ou lua/satélite) a câmera converge para ele, mesmo em órbita; sobre o vazio o ponto sob o cursor fica fixo. O alvo anterior tem prioridade enquanto o cursor só "escorrega" dele.
+- **Entrar/sair por proximidade**: aproximar de um planeta com a roda revela suas luas progressivamente e abre a categoria sem clique. Só abre com **alvo válido** (o planeta apontado), **zoom sustentado** nele, **distância relativa ao raio real** e um breve tempo de permanência. Sair exige afastar de verdade (limiar bem maior: histerese). Movimentos de câmera, arrastos, teclado e o modo *reorganizar* nunca abrem categorias. O clique continua independente.
+- **Continuidade**: a mudança de nível mantém a pose da câmera; o "voo" cinematográfico é medido em tempo de simulação; o alvo nunca cai na estrela; a câmera contorna corpos em vez de atravessá-los.
+- Detalhes, números e capturas comparativas: [`docs/fase2/RELATORIO.md`](docs/fase2/RELATORIO.md).
 
 ## Persistência
 
@@ -95,8 +102,9 @@ viagens de câmera; também configurável).
 
 ## Testes
 
-- `npm test` — 48 testes (layout sem sobreposição, urgência, transições do modelo, persistência em IndexedDB
+- `npm test` — 63 testes (layout sem sobreposição, urgência, transições do modelo, persistência em IndexedDB
   simulado, backup e reparo, busca, comandos de produto com desfazer/reconciliação).
+- `npm run e2e:nav` — 13 verificações da navegação espacial (zoom ao cursor, entrada/saída por proximidade, continuidade, painéis, laboratório, movimento reduzido, colisão). Exige servidor de **desenvolvimento** (usa `window.__orbita` e um passo de simulação fixo, só em dev, para ser determinístico mesmo com WebGL por software).
 - `npm run e2e` — percorre os critérios de sucesso no navegador real e confere o conteúdo gravado no IndexedDB
   (criar planeta → grupos → tarefas → editar/concluir → mover → excluir/desfazer → busca → reorganizar →
   recarregar → exportar/apagar/importar). Usa WebGL por software, então roda sem GPU.
