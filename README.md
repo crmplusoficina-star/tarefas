@@ -35,7 +35,8 @@ Requer Node 20+ e um navegador moderno com WebGL (há um modo de contingência s
   prazo vira um sinal luminoso (amarelo → laranja → vermelho pulsante), tarefas concluídas migram para a faixa
   de arquivo com uma animação de conclusão, e tarefas relacionadas são ligadas por feixes de luz.
 - **Cada tarefa**: título, descrição, prazo e horário, prioridade, status, subtarefas, observações,
-  data de conclusão (automática e editável), conexões, e mover entre grupos **e planetas**.
+  data de conclusão (automática e editável), conexões, **anexos** e mover entre grupos **e planetas**.
+- **Anexos locais**: PDFs, imagens, documentos (Word/ODT/RTF), planilhas (Excel/CSV/ODS), apresentações e textos até 25 MB cada (30 por tarefa), por botão ou arrastando para o painel. Ficam no **IndexedDB** do navegador (loja `files`, separada das tarefas), sem servidor nem API. Imagens e PDFs abrem em uma janela dentro do app; qualquer tipo pode ser baixado; excluir pede confirmação e pode ser desfeito. Entram no **backup** (JSON único, arquivos em base64) e voltam na restauração; backups antigos continuam abrindo. Arquivos órfãos (tarefa/grupo/planeta excluído) são limpos sozinhos, só depois que o histórico de desfazer não precisa mais deles.
 - **Indicadores no próprio universo**: anel de progresso do planeta/lua, sinal de urgência, estação quando um
   grupo tem muitas tarefas em andamento, radar de localização e *breadcrumb*.
 - **Navegação**: arrastar para girar, botão direito/Shift para mover, **roda para zoom direcionado ao cursor** (aproxime um planeta e a câmera converge para ele; continue e a categoria abre sozinha), clique para entrar,
@@ -57,7 +58,8 @@ Atalhos: `?` abre a lista completa dentro do app.
 
 ## Visão orbital (menos cliques)
 
-- **Planeta no universo**: ao passar o cursor (ou ao aproximar com a roda) o planeta ganha um brilho suave e, **dentro da cena**, um resumo: um anel fino por grupo (na cor do grupo), o grupo como ponto mais claro e suas tarefas abertas mais importantes como pontos menores no mesmo anel. Nomes de grupos e de algumas tarefas aparecem como rótulos ancorados. Nada é aberto, a câmera não se move e o resumo some gradualmente quando o cursor sai. De longe só ficam os planetas e os indicadores (anel de progresso, urgência, contagem).
+- **Órbitas e luas no universo**: cada planeta mostra, sem clicar, as próprias órbitas e luas (os grupos), animadas e em escala compacta; ao entrar no planeta (clique ou zoom) elas se abrem até a escala normal. O que aparece é um **orçamento visual** que muda com o tamanho do planeta na tela (zoom/distância), a largura da janela e o perfil gráfico: só os planetas maiores na tela desenham órbitas, cada um com as luas mais importantes (urgentes e com mais tarefas abertas) primeiro, e o detalhe cai progressivamente ao afastar. Isso só oculta o desenho: nenhum dado é alterado e, ao selecionar um planeta, **todos** os grupos e tarefas aparecem. Regras puras e testadas em `src/domain/overview.ts`.
+- **Planeta no universo**: ao passar o cursor (ou ao aproximar com a roda) o planeta ganha um brilho suave e, **dentro da cena**, pontos de tarefa viajam pelas órbitas das próprias luas (cor = urgência/status) com os nomes dos grupos e de algumas tarefas ancorados. Nada é aberto, a câmera não se move e o resumo some gradualmente quando o cursor sai.
 - **Um clique no planeta**: a viagem cinematográfica é a mesma, mas ao chegar **todos** os grupos já mostram suas tarefas como satélites em órbitas compactas ao redor de cada lua, sem clicar em nenhuma. As tarefas mais urgentes / em andamento vêm primeiro; o que não cabe vira um “+N” no rótulo do grupo e uma pequena nuvem de satélites menores.
 - **Tarefa direto**: clicar no nome de uma tarefa (ou no satélite) abre os detalhes sem passar pelo grupo; editar, concluir, excluir e vincular continuam iguais.
 - **Foco no grupo**: clicar na lua continua levando ao grupo, onde as órbitas se abrem nas faixas de prioridade completas.
@@ -65,8 +67,8 @@ Atalhos: `?` abre a lista completa dentro do app.
 
 ## Persistência
 
-Tudo é salvo em **IndexedDB** (`orbita`: `planets`, `groups`, `tasks`, `meta`) e sobrevive ao recarregar.
-A camada de dados fica atrás de uma interface (`src/data/adapter.ts`); hoje há `IndexedDbAdapter` e
+Tudo é salvo em **IndexedDB** (`orbita`: `planets`, `groups`, `tasks`, `meta`, `files`) e sobrevive ao recarregar.
+A camada de dados fica atrás de uma interface (`src/data/adapter.ts`); hoje há `IndexedDbAdapter` (esquema v2: `planets`, `groups`, `tasks`, `meta`, `files`) e
 `MemoryAdapter` (testes / armazenamento bloqueado). Para integrar um backend, implemente
 `StorageAdapter` (`loadAll`, `apply(ops)`, `clear`) — o app já emite apenas diferenças (`put`/`delete`
 por registro), em lotes, e descarrega pendências ao ocultar a página.
@@ -114,6 +116,7 @@ viagens de câmera; também configurável).
   simulado, backup e reparo, busca, comandos de produto com desfazer/reconciliação).
 - `npm run e2e:nav` — 13 verificações da navegação espacial (zoom ao cursor, entrada/saída por proximidade, continuidade, painéis, laboratório, movimento reduzido, colisão). Exige servidor de **desenvolvimento** (usa `window.__orbita` e um passo de simulação fixo, só em dev, para ser determinístico mesmo com WebGL por software).
 - `npm run e2e:orbital` — visão orbital: hover sem clique, um clique revelando grupos + tarefas, abrir tarefa direto, foco em grupo, muitos planetas, dezenas de tarefas, três resoluções e zoom (também em servidor de desenvolvimento).
+- `npm run e2e:ajustes` — órbitas e luas no universo, controle de densidade (poucos/muitos elementos em 800 a 2560 px, zoom, planeta com muitos grupos) e anexos (anexar, visualizar, baixar, recarregar, backup e restauração).
 - `npm run e2e` — percorre os critérios de sucesso no navegador real e confere o conteúdo gravado no IndexedDB
   (criar planeta → grupos → tarefas → editar/concluir → mover → excluir/desfazer → busca → reorganizar →
   recarregar → exportar/apagar/importar). Usa WebGL por software, então roda sem GPU.

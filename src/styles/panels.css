@@ -893,3 +893,95 @@ input[type='datetime-local'] {
     display: none;
   }
 }
+
+/* attachments ------------------------------------------------------------- */
+.attach {
+  border-radius: 12px;
+  transition: background 0.15s, outline-color 0.15s;
+  outline: 1px dashed transparent;
+  outline-offset: 4px;
+}
+.attach.over {
+  background: rgba(232, 201, 143, 0.07);
+  outline-color: var(--gold);
+}
+.attach-list {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.attach-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 6px 6px 8px;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.02);
+}
+.attach-kind {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  font: 600 10px var(--font-mono);
+  letter-spacing: 0.04em;
+  background: rgba(143, 168, 207, 0.16);
+  color: #b9cdf0;
+}
+.attach-kind.k-pdf {
+  background: rgba(255, 111, 94, 0.16);
+  color: #ff9a8c;
+}
+.attach-kind.k-image {
+  background: rgba(159, 227, 200, 0.14);
+  color: #9fe3c8;
+}
+.attach-kind.k-sheet {
+  background: rgba(120, 200, 140, 0.16);
+  color: #9fdc9f;
+}
+.attach-kind.k-doc,
+.attach-kind.k-slides {
+  background: rgba(127, 180, 255, 0.16);
+  color: #9cc4ff;
+}
+.attach-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.attach-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+.attach-meta {
+  font-size: 11px;
+  color: var(--ink-3);
+}
+.attach-viewer {
+  display: grid;
+  place-items: center;
+  min-height: 240px;
+}
+.attach-viewer img {
+  max-width: 100%;
+  max-height: 68vh;
+  object-fit: contain;
+  border-radius: 8px;
+}
+.attach-viewer iframe {
+  width: 100%;
+  height: 68vh;
+  border: 0;
+  border-radius: 8px;
+  background: #fff;
+}

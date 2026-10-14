@@ -5,7 +5,9 @@
 import { parseBackup, serializeBackup } from '../data/backup'
 import { groupsOfPlanet } from '../domain/stats'
 import type { Priority, Settings, Status, Task, UniverseData } from '../domain/types'
-import { canUndo, checkpoint, currentData, emptyUniverse, flushNow, mutate, replaceData, undo } from './dataStore'
+import { canUndo, checkpoint, currentData, emptyUniverse, flushNow, mutate, readAllFiles, readFile, releaseFile, replaceData, saveFile, undo } from './dataStore'
+import { checkFile, safeFileName } from '../domain/attachments'
+import { newId } from '../domain/ids'
 import * as M from './model'
 import { buildSampleUniverse } from './sample'
 import {
@@ -425,6 +427,81 @@ export function requestDeleteTask(id: string) {
   })
 }
 
+/* ------------------------------ attachments ----------------------------- */
+
+/**
+ * Stores the chosen files in IndexedDB (nothing leaves the browser) and lists them on the task.
+ * Returns how many were attached; rejected files are reported in a toast.
+ */
+export async function attachFiles(taskId: string, files: File[]): Promise<number> {
+  let added = 0
+  const rejected: string[] = []
+  for (const file of files) {
+    const task = data().tasks.find((t) => t.id === taskId)
+    if (!task) break
+    const check = checkFile(file, task.attachments.length)
+    if (!check.ok) {
+      rejected.push(check.reason)
+      continue
+    }
+    const id = newId('at')
+    try {
+      const bytes = await file.arrayBuffer()
+      const addedAt = Date.now()
+      await saveFile({ id, taskId, name: safeFileName(file.name), type: file.type, size: bytes.byteLength, addedAt, data: bytes })
+      mutate((d) =>
+        M.patchTask(d, taskId, {
+          attachments: [...(d.tasks.find((t) => t.id === taskId)?.attachments ?? []), { id, name: safeFileName(file.name), type: file.type, size: bytes.byteLength, addedAt }],
+        }),
+      )
+      added++
+    } catch (e) {
+      rejected.push(`Não foi possível guardar “${file.name}”${e instanceof Error && e.name === 'QuotaExceededError' ? ': armazenamento do navegador cheio.' : '.'}`)
+    } finally {
+      releaseFile(id)
+    }
+  }
+  if (rejected.length) pushToast(rejected.slice(0, 2).join(' ') + (rejected.length > 2 ? ` (+${rejected.length - 2})` : ''), 'warn')
+  else if (added) pushToast(added === 1 ? 'Anexo adicionado.' : `${added} anexos adicionados.`, 'success')
+  return added
+}
+
+/** The stored file as a Blob (undefined if its bytes are gone), for viewing or downloading. */
+export async function loadAttachmentBlob(attachmentId: string): Promise<{ blob: Blob; name: string } | null> {
+  const rec = await readFile(attachmentId)
+  if (!rec) return null
+  return { blob: new Blob([rec.data], { type: rec.type || 'application/octet-stream' }), name: rec.name }
+}
+
+export async function downloadAttachment(attachmentId: string) {
+  const f = await loadAttachmentBlob(attachmentId)
+  if (!f) return void pushToast('O arquivo deste anexo não foi encontrado neste navegador.', 'error')
+  const url = URL.createObjectURL(f.blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = f.name
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 2000)
+}
+
+export function requestRemoveAttachment(taskId: string, attachmentId: string) {
+  const att = data().tasks.find((t) => t.id === taskId)?.attachments.find((a) => a.id === attachmentId)
+  if (!att) return
+  askConfirm({
+    title: 'Excluir este anexo?',
+    message: `“${att.name}” será removido da tarefa e do armazenamento deste navegador. Você poderá desfazer logo em seguida.`,
+    confirmLabel: 'Excluir anexo',
+    danger: true,
+    onConfirm: () => {
+      checkpoint('Anexo excluído')
+      mutate((d) => M.patchTask(d, taskId, { attachments: (d.tasks.find((t) => t.id === taskId)?.attachments ?? []).filter((a) => a.id !== attachmentId) }))
+      pushToast('Anexo excluído.', 'info', { label: 'Desfazer', run: () => runUndo() }, 9000)
+    },
+  })
+}
+
 /* ------------------------------- universe ------------------------------- */
 
 export function updateSettings(patch: Partial<Settings>) {
@@ -458,10 +535,11 @@ export function loadSampleUniverse() {
   })
 }
 
-export function exportBackup(): { filename: string; text: string } {
+export async function exportBackup(): Promise<{ filename: string; text: string }> {
   const now = new Date()
   const stamp = now.toISOString().slice(0, 10)
-  return { filename: `orbita-backup-${stamp}.json`, text: serializeBackup(data(), now) }
+  await flushNow()
+  return { filename: `orbita-backup-${stamp}.json`, text: serializeBackup(data(), await readAllFiles(), now) }
 }
 
 export async function importBackup(text: string): Promise<boolean> {
@@ -472,16 +550,21 @@ export async function importBackup(text: string): Promise<boolean> {
   }
   const incoming = result.data
   const apply = async () => {
-    await replaceData(incoming)
+    await replaceData(incoming, result.files)
     reconcileNavigation()
+    const problems = result.dropped + result.missingFiles
     pushToast(
-      result.dropped > 0 ? `Backup importado. ${result.dropped} registro(s) inválido(s) foram ignorados.` : 'Backup importado com sucesso.',
-      result.dropped > 0 ? 'warn' : 'success',
+      problems > 0
+        ? `Backup importado. ${result.dropped} registro(s) inválido(s) e ${result.missingFiles} anexo(s) sem arquivo foram ignorados.`
+        : result.files.length > 0
+          ? `Backup importado com ${result.files.length} anexo(s).`
+          : 'Backup importado com sucesso.',
+      problems > 0 ? 'warn' : 'success',
     )
   }
   askConfirm({
     title: 'Importar backup?',
-    message: `Isto substitui o universo atual por “${incoming.settings.universeName}” (${incoming.planets.length} planetas, ${incoming.tasks.length} tarefas).`,
+    message: `Isto substitui o universo atual por “${incoming.settings.universeName}” (${incoming.planets.length} planetas, ${incoming.tasks.length} tarefas, ${result.files.length} anexos).`,
     confirmLabel: 'Importar e substituir',
     danger: true,
     onConfirm: () => void apply(),

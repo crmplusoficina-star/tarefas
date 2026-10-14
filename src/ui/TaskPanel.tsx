@@ -10,6 +10,7 @@ import { uiStore } from '../state/uiStore'
 import { useStore } from '../state/store'
 import { runtime } from '../scene/runtime'
 import { STATUS_COLOR } from '../scene/Satellites'
+import { AttachmentsSection } from './Attachments'
 import { Icon } from './Icon'
 import { CommitInput, Seg } from './primitives'
 
@@ -85,6 +86,7 @@ function ExistingTask({ task }: { task: Task }) {
           )}
         </>
       }
+      attachmentsOf={task}
       meta={`Criada ${formatDateTime(task.createdAt)} · Atualizada ${formatDateTime(task.updatedAt)}`}
       existing
     />
@@ -164,6 +166,7 @@ function TaskForm({
   meta,
   existing,
   onSubmit,
+  attachmentsOf,
 }: {
   heading: string
   value: Value
@@ -178,6 +181,8 @@ function TaskForm({
   meta?: string
   existing?: boolean
   onSubmit?: () => void
+  /** the saved task whose attachments are shown (new tasks have nothing to attach to yet) */
+  attachmentsOf?: Task
 }) {
   const data = useStore(dataStore, (s) => s.data)
   const now = useStore(clockStore, (s) => s.now)
@@ -330,6 +335,15 @@ function TaskForm({
             <Icon name="note" /> Adicionar observação
           </button>
         </div>
+
+        {attachmentsOf ? (
+          <AttachmentsSection task={data.tasks.find((t) => t.id === attachmentsOf.id) ?? attachmentsOf} />
+        ) : (
+          <div className="field">
+            <span className="label">Anexos</span>
+            <p className="hint">Lance a tarefa primeiro; depois será possível anexar PDFs, imagens, documentos e planilhas.</p>
+          </div>
+        )}
 
         <div className="field">
           <span className="label">Conexões</span>

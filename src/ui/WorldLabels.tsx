@@ -95,7 +95,7 @@ export function WorldLabels() {
         content.forEach((c) => {
           out.push({
             key: `hg:${c.group.id}`,
-            anchor: `hg:${c.group.id}`,
+            anchor: `g:${c.group.id}`,
             kind: 'group',
             text: c.group.name,
             color: c.group.color,

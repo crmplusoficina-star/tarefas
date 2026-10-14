@@ -1,6 +1,6 @@
 import type { Settings, UniverseData } from '../domain/types'
 import { sanitizeUniverse } from '../domain/sanitize'
-import type { CollectionName, StorageAdapter, WriteOp } from './adapter'
+import type { CollectionName, FileRecord, StorageAdapter, WriteOp } from './adapter'
 import { IndexedDbAdapter } from './indexeddb'
 import { MemoryAdapter } from './memory'
 
@@ -105,7 +105,7 @@ export class Persister {
     return [...last.values()]
   }
 
-  async replaceAll(data: UniverseData) {
+  async replaceAll(data: UniverseData, files: FileRecord[] = []) {
     await this.flush()
     await this.chain.then(() => this.adapter.clear())
     const ops: WriteOp[] = [
@@ -115,6 +115,7 @@ export class Persister {
       { type: 'putSettings', value: data.settings },
     ]
     await this.adapter.apply(ops)
+    for (const f of files) await this.adapter.putFile(f)
   }
 
   get error() {

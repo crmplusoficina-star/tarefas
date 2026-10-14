@@ -10,7 +10,7 @@
  * are covered by `npm run e2e` (smoke), phase-2 navigation by `npm run e2e:nav`.
  */
 import { mkdirSync } from 'node:fs'
-import { boot } from './lib/app.mjs'
+import { boot, synth } from './lib/app.mjs'
 import { GL_ARGS, loadPlaywright } from './lib/browser.mjs'
 
 const { chromium } = loadPlaywright()
@@ -39,84 +39,6 @@ const assert = (cond, msg) => {
 }
 
 const browser = await chromium.launch({ args: GL_ARGS })
-
-/** Replaces the data with a synthetic universe cloned from the example one. */
-async function synth(page, { planets, groups, tasks, name = 'Sintético' }) {
-  await page.evaluate(
-    ({ planets, groups, tasks }) => {
-      const o = window.__orbita
-      const base = o.dataStore.get().data
-      const tpl = base.planets[0]
-      const colors = ['#7fb4ff', '#e0a24c', '#9fe3c8', '#c7a6e8', '#ff8d80', '#e9c98d', '#8fd0ff']
-      const prios = ['critical', 'high', 'medium', 'low']
-      const stat = ['todo', 'doing', 'todo', 'blocked', 'todo', 'done']
-      const today = new Date()
-      const day = (d) => new Date(today.getTime() + d * 86400000).toISOString().slice(0, 10)
-      const P = []
-      const G = []
-      const T = []
-      let k = 0
-      for (let i = 0; i < planets; i++) {
-        const pid = `sp${i}`
-        const lane = Math.floor(i / 8)
-        const inLane = Math.min(8, planets - lane * 8)
-        P.push({
-          ...structuredClone(tpl),
-          id: pid,
-          name: i === 0 ? 'Planeta Alfa' : `Planeta ${i + 1}`,
-          symbol: ['◐', '✦', '⌂', '✎', '⚙', '✈'][i % 6],
-          lane,
-          phase: ((i % 8) / inLane) * Math.PI * 2,
-          order: i,
-          style: { ...structuredClone(tpl.style), seed: 100 + i * 17, size: 0.9 + (i % 4) * 0.12 },
-        })
-        for (let j = 0; j < groups; j++) {
-          const gid = `sg${i}_${j}`
-          G.push({
-            id: gid,
-            planetId: pid,
-            name: ['Reuniões', 'Relatórios', 'Auditorias', 'Compras', 'Projetos', 'Clientes', 'Equipe'][j % 7],
-            description: '',
-            symbol: '',
-            color: colors[j % colors.length],
-            kind: 'auto',
-            order: j,
-            createdAt: 1,
-            updatedAt: 1,
-          })
-          const count = Array.isArray(tasks) ? (i === 0 ? tasks[j % tasks.length] : 3) : tasks
-          for (let t = 0; t < count; t++, k++) {
-            const done = stat[k % stat.length] === 'done'
-            T.push({
-              id: `st${k}`,
-              planetId: pid,
-              groupId: gid,
-              title: `${['Revisar', 'Enviar', 'Aprovar', 'Cotar', 'Agendar', 'Fechar'][k % 6]} ${['contrato', 'proposta', 'laudo', 'pedido', 'agenda', 'balanço'][(k * 7) % 6]} ${k + 1}`,
-              description: '',
-              dueDate: done ? null : day(((k * 5) % 21) - 4),
-              dueTime: null,
-              priority: prios[(k * 3) % 4],
-              status: stat[k % stat.length],
-              subtasks: [],
-              notes: [],
-              links: [],
-              completedAt: done ? Date.now() - 86400000 : null,
-              createdAt: 1000 + k,
-              updatedAt: 1000 + k,
-            })
-          }
-        }
-      }
-      o.uiStore.set({ planetId: null, groupId: null, taskId: null, taskPanel: null, hover: null, peekPlanetId: null })
-      o.dataStore.set({ data: { ...base, planets: P, groups: G, tasks: T } })
-    },
-    { planets, groups, tasks },
-  )
-  await page.waitForFunction((n) => {
-    const o = window.__orbita
-    return o.dataStore.get().data.planets.length === n && o.dataStore.get().data.planets.every((p) => o.runtime.pos.has(`p:${p.id}`))
-  }, planets)
-}
 
 /** what the labels look like right now */
 const labelsReport = (page) =>

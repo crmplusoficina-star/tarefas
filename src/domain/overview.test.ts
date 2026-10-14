@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { HALO, haloContent, haloTarget, groupReach, labelBudget, OVERVIEW, overviewRadius, pickOverview, planetReach, rankTasks, satelliteCap } from './overview'
+import { HALO, haloContent, haloTarget, moonWeight, rankGroups, universeBudget, universeLod, universeRadius, groupReach, labelBudget, OVERVIEW, overviewRadius, pickOverview, planetReach, rankTasks, satelliteCap } from './overview'
 import { SAT_START, layoutGroups } from './layout'
 import type { Group, Priority, Status, Task } from './types'
 
@@ -7,7 +7,7 @@ const NOW = new Date(2026, 5, 10, 12).getTime()
 let n = 0
 const task = (over: Partial<Task> = {}): Task => ({
   id: `t${n++}`, planetId: 'p', groupId: 'g', title: 'x', description: '', dueDate: null, dueTime: null,
-  priority: 'medium' as Priority, status: 'todo' as Status, subtasks: [], notes: [], links: [], completedAt: null, createdAt: n, updatedAt: n, ...over,
+  priority: 'medium' as Priority, status: 'todo' as Status, subtasks: [], notes: [], links: [], attachments: [], completedAt: null, createdAt: n, updatedAt: n, ...over,
 })
 const group = (id: string, order = 0): Group => ({ id, planetId: 'p', name: id, description: '', symbol: '', color: '#fff', kind: 'auto', order, createdAt: 0, updatedAt: 0 })
 
@@ -57,13 +57,61 @@ describe('density budgets', () => {
     expect(labelBudget(1, 1000)).toBe(3) // never below a readable minimum
   })
 
-  it('halo detail: hidden when far, ambient when the planet is big, full on hover or zoom focus', () => {
-    expect(haloTarget({ pxRadius: 8, hovered: false, zoomFocus: false })).toBe(0)
-    const mid = haloTarget({ pxRadius: 26, hovered: false, zoomFocus: false })
-    expect(mid).toBeGreaterThan(0)
-    expect(mid).toBeLessThan(0.6)
-    expect(haloTarget({ pxRadius: 8, hovered: true, zoomFocus: false })).toBe(1)
-    expect(haloTarget({ pxRadius: 8, hovered: false, zoomFocus: true })).toBe(1)
+  it('halo detail: only while hovered or approached', () => {
+    expect(haloTarget({ hovered: false, zoomFocus: false })).toBe(0)
+    expect(haloTarget({ hovered: true, zoomFocus: false })).toBe(1)
+    expect(haloTarget({ hovered: false, zoomFocus: true })).toBe(1)
+  })
+})
+
+describe('orbits and moons seen from the universe', () => {
+  it('level of detail grows with the apparent size of the planet and hover never hides it', () => {
+    expect(universeLod({ pxRadius: 5, hovered: false, zoomFocus: false })).toBe(0)
+    const a = universeLod({ pxRadius: 14, hovered: false, zoomFocus: false })
+    const b = universeLod({ pxRadius: 22, hovered: false, zoomFocus: false })
+    expect(a).toBeGreaterThan(0)
+    expect(b).toBeGreaterThan(a)
+    expect(universeLod({ pxRadius: 40, hovered: false, zoomFocus: false })).toBe(1)
+    expect(universeLod({ pxRadius: 5, hovered: true, zoomFocus: false })).toBeGreaterThanOrEqual(0.7)
+  })
+
+  it('budget follows the profile and the screen and never reaches zero', () => {
+    expect(universeBudget('low', 1440).systems).toBeLessThan(universeBudget('high', 1440).systems)
+    expect(universeBudget('high', 800).moons).toBeLessThan(universeBudget('high', 1440).moons)
+    expect(universeBudget('high', 2560).moons).toBeGreaterThanOrEqual(universeBudget('high', 1440).moons)
+    const tiny = universeBudget('low', 600)
+    expect(tiny.systems).toBeGreaterThanOrEqual(1)
+    expect(tiny.moons).toBeGreaterThanOrEqual(2)
+  })
+
+  it('moons appear in order of importance as detail grows', () => {
+    expect(moonWeight(0, 0, 8)).toBeCloseTo(0.5)
+    expect(moonWeight(0.1, 0, 8)).toBe(1)
+    expect(moonWeight(0.3, 1, 8)).toBe(1)
+    expect(moonWeight(0.3, 5, 8)).toBe(0)
+    expect(moonWeight(1, 7, 8)).toBe(1)
+    for (let r = 0; r < 7; r++) expect(moonWeight(0.4, r, 8)).toBeGreaterThanOrEqual(moonWeight(0.4, r + 1, 8))
+  })
+
+  it('compressed moon orbits stay inside the room between neighbouring planets', () => {
+    // planets sit at least 10.5 apart, the biggest has radius 2.8: three lanes must stay under half of that
+    expect(universeRadius(2.8, 2) + 0.3).toBeLessThan(10.5 / 2 + 1.5)
+    expect(universeRadius(2, 1)).toBeGreaterThan(universeRadius(2, 0))
+    expect(universeRadius(2, 0)).toBeGreaterThan(2 * 1.3)
+  })
+
+  it('ranks groups: urgent work, then open tasks, then own order', () => {
+    const a = group('a', 0)
+    const b = group('b', 1)
+    const c = group('c', 2)
+    const tasks = [
+      task({ groupId: 'a' }),
+      task({ groupId: 'b' }),
+      task({ groupId: 'b' }),
+      task({ groupId: 'c', dueDate: '2026-06-09' }),
+      task({ groupId: 'a', status: 'done', completedAt: NOW }),
+    ]
+    expect(rankGroups([a, b, c], tasks, NOW).map((g) => g.id)).toEqual(['c', 'b', 'a'])
   })
 })
 

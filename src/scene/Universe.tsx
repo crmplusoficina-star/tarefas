@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef } from 'react'
 import { AdditiveBlending, Color, Group, LineLoop, Mesh, Plane, Raycaster, ShaderMaterial, Vector2, Vector3, BufferGeometry, Float32BufferAttribute } from 'three'
 import { LANE_BASE, LANE_STEP, laneFromRadius, laneHeight, laneOmega, laneRadius, planetRadius, TAU } from '../domain/layout'
 import { statsOf, tasksOfPlanet, type Stats } from '../domain/stats'
-import { haloTarget } from '../domain/overview'
+import { haloTarget, universeBudget, universeLod } from '../domain/overview'
 import type { Planet } from '../domain/types'
 import { movePlanet, goPlanet } from '../state/commands'
 import { clockStore } from '../state/clock'
@@ -16,6 +16,7 @@ import { clamp01, damp, dampAngle, easeOutBack, wrapPi } from './math'
 import { PlanetBody, makeCtl } from './PlanetBody'
 import { PlanetHalo } from './PlanetHalo'
 import { useQualityTier } from './useQuality'
+import { useViewportWidth } from './useViewport'
 import { usePickable } from './pick'
 import { ProgressRing } from './ProgressRing'
 import { runtime, anchor, forgetAnchor, stepDt } from './runtime'
@@ -302,65 +303,86 @@ export function Universe({ quality }: { quality: QualityProfile }) {
         <PlanetNode key={p.id} planet={p} stats={stats.get(p.id)!} quality={quality} />
       ))}
       <DragController />
-      <HaloDirector />
+      <UniverseDirector />
       <HaloLayer />
     </group>
   )
 }
 
-/* ------------------------------------------------- in-scene summary ("halo") */
+/* ------------------------------------------------- orbits, moons and summary */
 
 /**
- * Decides, every frame, how much of the summary each planet shows: hovered or zoomed-on planets get
- * the full one, big enough planets a quiet version, the rest none. The value is damped so it fades in
- * quickly and lingers when the cursor leaves. At most a few planets are active at once.
+ * Decides, every frame, how much each planet shows from the universe. Level of detail follows the
+ * planet's size on screen (so it adapts to zoom, window size and distance); a budget that depends on
+ * the graphics profile and the screen width caps how many planets draw orbits and moons at once.
+ * Hovered or zoomed-on planets always qualify and also get the task summary. Values are damped, so
+ * everything fades in quickly and lingers when the cursor leaves.
  */
-function HaloDirector() {
+function UniverseDirector() {
   const tier = useQualityTier()
-  const limit = tier === 'low' ? 2 : 4
+  const width = useViewportWidth()
+  const budget = universeBudget(tier, width)
+  const haloLimit = tier === 'low' ? 1 : 2
   useFrame((_, dtRaw) => {
     const cam = runtime.camera
     const ui = uiStore.get()
-    const planets = dataStore.get().data.planets
+    const data = dataStore.get().data
     const active = !ui.lab && levelOf(ui) === 'universe' && ui.mode !== 'arrange' && !runtime.drag
     const dt = stepDt(dtRaw)
     const tanHalf = cam ? Math.tan((cam.fov * Math.PI) / 360) : 1
-    const targets: [string, number][] = []
-    for (const p of planets) {
-      let t = 0
+    const withGroups = new Set(data.groups.map((g) => g.planetId))
+    const rows: { id: string; lod: number; halo: number; forced: boolean; px: number }[] = []
+    for (const p of data.planets) {
       const c = runtime.pos.get(`p:${p.id}`)
-      if (active && cam && c) {
-        const pxRadius = ((runtime.size.get(`p:${p.id}`) ?? 1) * (runtime.height / 2)) / (cam.position.distanceTo(c) * tanHalf)
-        t = haloTarget({
-          pxRadius,
-          hovered: runtime.hoverPlanet === p.id,
-          zoomFocus: runtime.zoomFocus.key === `p:${p.id}` && runtime.zoomFocus.w > 0.5,
-        })
+      let lod = 0
+      let halo = 0
+      let forced = false
+      let px = 0
+      if (cam && c) {
+        px = ((runtime.size.get(`p:${p.id}`) ?? 1) * (runtime.height / 2)) / (cam.position.distanceTo(c) * tanHalf)
+        const hovered = active && runtime.hoverPlanet === p.id
+        const zoomFocus = active && runtime.zoomFocus.key === `p:${p.id}` && runtime.zoomFocus.w > 0.5
+        forced = hovered || zoomFocus
+        if (withGroups.has(p.id)) lod = universeLod({ pxRadius: px, hovered, zoomFocus })
+        halo = haloTarget({ hovered, zoomFocus })
         // once the real moons take over the summary steps aside
-        if (ui.peekPlanetId === p.id) t *= 1 - clamp01(runtime.reveal * 2.2)
+        if (ui.peekPlanetId === p.id) halo *= 1 - clamp01(runtime.reveal * 2.2)
       }
-      targets.push([p.id, t])
+      rows.push({ id: p.id, lod: active ? lod : 0, halo: active ? halo : 0, forced, px })
     }
-    targets.sort((a, b) => b[1] - a[1])
-    const ids: string[] = []
-    const named: string[] = []
+    // the budget goes to the planets that are being pointed at, then to the biggest on screen
+    rows.sort((a, b) => Number(b.forced) - Number(a.forced) || b.px - a.px)
+    const systems: string[] = []
     const prevNamed = ui.haloLabelPlanets
-    // the quiet overview is only kept for the couple of most prominent planets: many planets must not clutter
-    let quiet = 0
-    targets.forEach(([id, t], i) => {
-      const goal = i < limit && (t >= 0.99 || quiet++ < 2) ? t : 0
-      const cur = runtime.halo.get(id) ?? 0
-      const next = runtime.reducedMotion ? goal : damp(cur, goal, goal > cur ? 9 : 2.4, dt)
+    const named: string[] = []
+    const halos: string[] = []
+    let haloCount = 0
+    rows.forEach((r, i) => {
+      const lodGoal = i < budget.systems ? r.lod : 0
+      const curLod = runtime.lod.get(r.id) ?? 0
+      const nextLod = runtime.reducedMotion ? lodGoal : damp(curLod, lodGoal, lodGoal > curLod ? 6 : 3, dt)
+      if (nextLod > 0.01) {
+        runtime.lod.set(r.id, nextLod)
+        systems.push(r.id)
+      } else runtime.lod.delete(r.id)
+
+      const haloGoal = haloCount < haloLimit ? r.halo : 0
+      if (r.halo > 0) haloCount++
+      const cur = runtime.halo.get(r.id) ?? 0
+      const next = runtime.reducedMotion ? haloGoal : damp(cur, haloGoal, haloGoal > cur ? 9 : 2.4, dt)
       if (next > 0.004) {
-        runtime.halo.set(id, next)
-        ids.push(id)
+        runtime.halo.set(r.id, next)
+        halos.push(r.id)
         // names are written for the full summary, with a little hysteresis while it fades
-        if (goal >= 0.99 || (prevNamed.includes(id) && next > 0.62)) named.push(id)
-      } else runtime.halo.delete(id)
+        if (haloGoal >= 0.99 || (prevNamed.includes(r.id) && next > 0.5)) named.push(r.id)
+      } else runtime.halo.delete(r.id)
     })
-    if (prevNamed.length !== named.length || prevNamed.some((x, i) => x !== named[i])) uiStore.set({ haloLabelPlanets: named })
-    const prev = ui.haloPlanets
-    if (prev.length !== ids.length || prev.some((x, i) => x !== ids[i])) uiStore.set({ haloPlanets: ids })
+    const same = (a: string[], b: string[]) => a.length === b.length && a.every((x, i) => x === b[i])
+    const patch: Partial<typeof ui> = {}
+    if (!same(ui.systemPlanets, systems)) patch.systemPlanets = systems
+    if (!same(ui.haloPlanets, halos)) patch.haloPlanets = halos
+    if (!same(prevNamed, named)) patch.haloLabelPlanets = named
+    if (Object.keys(patch).length) uiStore.set(patch)
   })
   return null
 }

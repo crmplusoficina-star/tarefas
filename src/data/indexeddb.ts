@@ -1,9 +1,10 @@
-import type { CollectionName, RawSnapshot, StorageAdapter, WriteOp } from './adapter'
+import type { CollectionName, FileRecord, RawSnapshot, StorageAdapter, WriteOp } from './adapter'
 
 const DB_NAME = 'orbita'
-const DB_VERSION = 1
+const DB_VERSION = 2
 const COLLECTIONS: CollectionName[] = ['planets', 'groups', 'tasks']
 const META = 'meta'
+const FILES = 'files'
 const SETTINGS_KEY = 'settings'
 
 function req<T>(r: IDBRequest<T>): Promise<T> {
@@ -39,6 +40,8 @@ export class IndexedDbAdapter implements StorageAdapter {
         const db = request.result
         for (const c of COLLECTIONS) if (!db.objectStoreNames.contains(c)) db.createObjectStore(c, { keyPath: 'id' })
         if (!db.objectStoreNames.contains(META)) db.createObjectStore(META, { keyPath: 'key' })
+        // v2: attachments (bytes live apart from the task records)
+        if (!db.objectStoreNames.contains(FILES)) db.createObjectStore(FILES, { keyPath: 'id' })
       }
       request.onsuccess = () => {
         const db = request.result
@@ -73,10 +76,38 @@ export class IndexedDbAdapter implements StorageAdapter {
     await done(tx)
   }
 
+  async loadFiles(): Promise<FileRecord[]> {
+    const tx = this.db.transaction(FILES, 'readonly')
+    return (await req(tx.objectStore(FILES).getAll())) as FileRecord[]
+  }
+
+  async putFile(file: FileRecord): Promise<void> {
+    const tx = this.db.transaction(FILES, 'readwrite')
+    tx.objectStore(FILES).put(file)
+    await done(tx)
+  }
+
+  async getFile(id: string): Promise<FileRecord | undefined> {
+    const tx = this.db.transaction(FILES, 'readonly')
+    return (await req(tx.objectStore(FILES).get(id))) as FileRecord | undefined
+  }
+
+  async deleteFile(id: string): Promise<void> {
+    const tx = this.db.transaction(FILES, 'readwrite')
+    tx.objectStore(FILES).delete(id)
+    await done(tx)
+  }
+
+  async listFileIds(): Promise<string[]> {
+    const tx = this.db.transaction(FILES, 'readonly')
+    return (await req(tx.objectStore(FILES).getAllKeys())) as string[]
+  }
+
   async clear(): Promise<void> {
-    const tx = this.db.transaction([...COLLECTIONS, META], 'readwrite')
+    const tx = this.db.transaction([...COLLECTIONS, META, FILES], 'readwrite')
     for (const c of COLLECTIONS) tx.objectStore(c).clear()
     tx.objectStore(META).clear()
+    tx.objectStore(FILES).clear()
     await done(tx)
   }
 }

@@ -199,6 +199,7 @@ export function addTask(data: UniverseData, input: TaskInput, now = Date.now(), 
     subtasks: input.subtasks ?? [],
     notes: input.notes ?? [],
     links: [],
+    attachments: [],
     completedAt: status === 'done' ? now : null,
     createdAt: now,
     updatedAt: now,
@@ -209,7 +210,7 @@ export function addTask(data: UniverseData, input: TaskInput, now = Date.now(), 
 }
 
 export type TaskPatch = Partial<
-  Pick<Task, 'title' | 'description' | 'dueDate' | 'dueTime' | 'priority' | 'status' | 'subtasks' | 'notes' | 'completedAt'>
+  Pick<Task, 'title' | 'description' | 'dueDate' | 'dueTime' | 'priority' | 'status' | 'subtasks' | 'notes' | 'attachments' | 'completedAt'>
 >
 
 export function patchTask(data: UniverseData, id: string, patch: TaskPatch, now = Date.now()): UniverseData {

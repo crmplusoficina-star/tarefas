@@ -26,8 +26,8 @@ function Settings() {
   const close = () => uiStore.set({ settingsOpen: false })
   const tier = resolveQuality(s.effects, autoQuality)
 
-  const doExport = () => {
-    const { filename, text } = exportBackup()
+  const doExport = async () => {
+    const { filename, text } = await exportBackup()
     const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }))
     const a = document.createElement('a')
     a.href = url
