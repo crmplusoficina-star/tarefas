@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { MemoryAdapter } from '../data/memory'
 import { defaultStyle } from '../domain/presets'
 import * as C from './commands'
-import { currentData, dataStore, initData } from './dataStore'
+import { collectFiles, currentData, dataStore, initData, readAllFiles, readFile } from './dataStore'
 import { uiStore } from './uiStore'
 
 async function fresh() {
@@ -133,7 +133,7 @@ describe('commands', () => {
 
   it('imports a backup after confirmation and rejects invalid files', async () => {
     seed()
-    const { text } = C.exportBackup()
+    const { text } = await C.exportBackup()
     await fresh()
     expect(await C.importBackup('{ nope')).toBe(false)
     expect(currentData().planets).toHaveLength(0)
@@ -153,5 +153,77 @@ describe('commands', () => {
     C.loadSampleUniverse()
     expect(uiStore.get().confirm).toBeNull()
     expect(currentData().planets.length).toBeGreaterThan(2)
+  })
+
+  describe('attachments', () => {
+    const file = (name: string, bytes: number[] | number, type = '') => new File([new Uint8Array(typeof bytes === 'number' ? new Array(bytes).fill(7) : bytes)], name, { type })
+
+    it('stores the bytes locally and lists the file on the task', async () => {
+      const { taskId } = seed()
+      expect(await C.attachFiles(taskId, [file('laudo.pdf', [1, 2, 3, 4], 'application/pdf'), file('foto.png', [9, 9], 'image/png')])).toBe(2)
+      const task = currentData().tasks.find((t) => t.id === taskId)!
+      expect(task.attachments.map((a) => [a.name, a.size, a.type])).toEqual([
+        ['laudo.pdf', 4, 'application/pdf'],
+        ['foto.png', 2, 'image/png'],
+      ])
+      const stored = await readFile(task.attachments[0]!.id)
+      expect([...new Uint8Array(stored!.data)]).toEqual([1, 2, 3, 4])
+      expect(stored!.taskId).toBe(taskId)
+    })
+
+    it('rejects empty and oversized files without touching the task', async () => {
+      const { taskId } = seed()
+      const big = { name: 'enorme.zip', size: 26 * 1024 * 1024, type: '', arrayBuffer: async () => new ArrayBuffer(0) } as unknown as File
+      expect(await C.attachFiles(taskId, [file('vazio.txt', 0), big])).toBe(0)
+      expect(currentData().tasks[0]!.attachments).toHaveLength(0)
+      expect(uiStore.get().toasts.some((t) => t.tone === 'warn')).toBe(true)
+    })
+
+    it('removing an attachment can be undone and its bytes are only collected once nothing can bring it back', async () => {
+      const { taskId } = seed()
+      await C.attachFiles(taskId, [file('a.xlsx', [5, 5, 5])])
+      const id = currentData().tasks[0]!.attachments[0]!.id
+      C.requestRemoveAttachment(taskId, id)
+      confirmPending()
+      expect(currentData().tasks[0]!.attachments).toHaveLength(0)
+      await collectFiles()
+      expect(await readFile(id)).toBeDefined() // still reachable through undo
+      C.runUndo()
+      expect(currentData().tasks[0]!.attachments.map((a) => a.id)).toEqual([id])
+      expect(await readFile(id)).toBeDefined()
+    })
+
+    it('collects files of deleted tasks once the undo history no longer needs them', async () => {
+      const { taskId } = seed()
+      await C.attachFiles(taskId, [file('b.docx', [1])])
+      const id = currentData().tasks[0]!.attachments[0]!.id
+      C.requestDeleteTask(taskId)
+      confirmPending()
+      await collectFiles()
+      expect(await readFile(id)).toBeDefined()
+      // a fresh session has no undo history
+      const adapter = new MemoryAdapter()
+      await adapter.putFile({ id, taskId, name: 'b.docx', type: '', size: 1, addedAt: 1, data: new Uint8Array([1]).buffer })
+      await initData(adapter) // loads an empty universe and collects the orphan
+      await new Promise((r) => setTimeout(r, 10))
+      expect(await adapter.listFileIds()).toEqual([])
+    })
+
+    it('goes into the backup and comes back with the restore', async () => {
+      const { taskId } = seed()
+      await C.attachFiles(taskId, [file('plano.pdf', [10, 20, 30], 'application/pdf')])
+      const { text } = await C.exportBackup()
+      expect(JSON.parse(text).files).toHaveLength(1)
+      await fresh()
+      expect(await readAllFiles()).toHaveLength(0)
+      expect(await C.importBackup(text)).toBe(true)
+      confirmPending()
+      await new Promise((r) => setTimeout(r, 20))
+      const task = currentData().tasks[0]!
+      expect(task.attachments).toHaveLength(1)
+      const back = await readFile(task.attachments[0]!.id)
+      expect([...new Uint8Array(back!.data)]).toEqual([10, 20, 30])
+      expect(back!.name).toBe('plano.pdf')
+    })
   })
 })

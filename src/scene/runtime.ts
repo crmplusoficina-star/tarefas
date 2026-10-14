@@ -61,6 +61,10 @@ export const runtime = {
   moonFocus: new Map<string, number>(),
   /** planetId → 0..1 level of detail of the summary halo seen from the universe */
   halo: new Map<string, number>(),
+  /** planetId → 0..1 level of detail of its orbits and moons seen from the universe */
+  lod: new Map<string, number>(),
+  /** groupId → where its moon is on its orbit (lets the task summary follow the moon) */
+  moonOrbit: new Map<string, { angle: number; radius: number; tilt: number; presence: number }>(),
 }
 
 /** Simulation step for a frame: clamped wall time, or the fixed test step. */

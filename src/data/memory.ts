@@ -1,4 +1,4 @@
-import type { RawSnapshot, StorageAdapter, WriteOp } from './adapter'
+import type { FileRecord, RawSnapshot, StorageAdapter, WriteOp } from './adapter'
 
 /** Non-durable adapter: used in tests and when IndexedDB is unavailable (e.g. blocked storage). */
 export class MemoryAdapter implements StorageAdapter {
@@ -10,6 +10,7 @@ export class MemoryAdapter implements StorageAdapter {
     tasks: new Map<string, unknown>(),
   }
   private settings: unknown
+  private files = new Map<string, FileRecord>()
 
   async loadAll(): Promise<RawSnapshot> {
     return {
@@ -28,7 +29,29 @@ export class MemoryAdapter implements StorageAdapter {
     }
   }
 
+  async loadFiles(): Promise<FileRecord[]> {
+    return [...this.files.values()].map((f) => ({ ...f, data: f.data.slice(0) }))
+  }
+
+  async putFile(file: FileRecord): Promise<void> {
+    this.files.set(file.id, { ...file, data: file.data.slice(0) })
+  }
+
+  async getFile(id: string): Promise<FileRecord | undefined> {
+    const f = this.files.get(id)
+    return f ? { ...f, data: f.data.slice(0) } : undefined
+  }
+
+  async deleteFile(id: string): Promise<void> {
+    this.files.delete(id)
+  }
+
+  async listFileIds(): Promise<string[]> {
+    return [...this.files.keys()]
+  }
+
   async clear(): Promise<void> {
+    this.files.clear()
     this.stores.planets.clear()
     this.stores.groups.clear()
     this.stores.tasks.clear()

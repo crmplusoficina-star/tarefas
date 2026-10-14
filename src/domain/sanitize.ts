@@ -3,6 +3,7 @@ import {
   PRIORITIES,
   STATUSES,
   type AtmosphereKind,
+  type Attachment,
   type Group,
   type GroupKind,
   type Note,
@@ -123,6 +124,24 @@ function sanitizeNotes(raw: unknown): Note[] {
   )
 }
 
+function sanitizeAttachments(raw: unknown): Attachment[] {
+  if (!Array.isArray(raw)) return []
+  const seen = new Set<string>()
+  const out: Attachment[] = []
+  for (const a of raw) {
+    if (!isObj(a) || typeof a.id !== 'string' || !a.id || seen.has(a.id)) continue
+    seen.add(a.id)
+    out.push({
+      id: a.id,
+      name: str(a.name, 'arquivo').slice(0, 255) || 'arquivo',
+      type: str(a.type).slice(0, 120),
+      size: Math.max(0, Math.floor(num(a.size, 0))),
+      addedAt: num(a.addedAt, Date.now()),
+    })
+  }
+  return out
+}
+
 export function sanitizeTask(raw: unknown): Task | null {
   if (!isObj(raw) || typeof raw.id !== 'string' || !raw.id) return null
   if (typeof raw.groupId !== 'string' || typeof raw.planetId !== 'string') return null
@@ -143,6 +162,7 @@ export function sanitizeTask(raw: unknown): Task | null {
     subtasks: sanitizeSubtasks(raw.subtasks),
     notes: sanitizeNotes(raw.notes),
     links: Array.isArray(raw.links) ? raw.links.filter((l): l is string => typeof l === 'string') : [],
+    attachments: sanitizeAttachments(raw.attachments),
     completedAt: status === 'done' ? (typeof raw.completedAt === 'number' ? raw.completedAt : now) : null,
     createdAt: num(raw.createdAt, now),
     updatedAt: num(raw.updatedAt, now),

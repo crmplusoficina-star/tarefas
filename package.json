@@ -14,7 +14,8 @@
     "test:watch": "vitest",
     "e2e": "node e2e/smoke.mjs",
     "e2e:nav": "node e2e/navigation.mjs",
-    "e2e:orbital": "node e2e/orbital-view.mjs"
+    "e2e:orbital": "node e2e/orbital-view.mjs",
+    "e2e:ajustes": "node e2e/ajustes.mjs"
   },
   "dependencies": {
     "@react-three/fiber": "^9.8.1",

@@ -71,6 +71,16 @@ export interface Note {
   createdAt: number
 }
 
+/** Metadata of a file attached to a task; the bytes live in their own IndexedDB store (see data/adapter.ts). */
+export interface Attachment {
+  id: string
+  name: string
+  /** MIME type as reported by the browser ('' when unknown) */
+  type: string
+  size: number
+  addedAt: number
+}
+
 export interface Task {
   id: string
   planetId: string
@@ -87,6 +97,7 @@ export interface Task {
   notes: Note[]
   /** related tasks (same group) rendered as luminous connections */
   links: string[]
+  attachments: Attachment[]
   completedAt: number | null
   createdAt: number
   updatedAt: number
@@ -112,7 +123,7 @@ export interface UniverseData {
   settings: Settings
 }
 
-export const SCHEMA_VERSION = 1
+export const SCHEMA_VERSION = 2
 
 export const DEFAULT_SETTINGS: Settings = {
   universeName: 'Meu Universo',

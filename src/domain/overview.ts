@@ -97,11 +97,9 @@ export function labelBudget(shownTasks: number, viewportWidth: number): number {
   return Math.max(3, Math.round(base * room))
 }
 
-/** Level of detail of the summary halo around a planet in the universe view (0 = none, 1 = full). */
-export function haloTarget(args: { pxRadius: number; hovered: boolean; zoomFocus: boolean }): number {
-  if (args.hovered || args.zoomFocus) return 1
-  const t = Math.min(1, Math.max(0, (args.pxRadius - 18) / 16))
-  return 0.45 * t * t * (3 - 2 * t)
+/** Summary of a planet's tasks drawn over its moons: only while it is hovered or approached (0 = none, 1 = full). */
+export function haloTarget(args: { hovered: boolean; zoomFocus: boolean }): number {
+  return args.hovered || args.zoomFocus ? 1 : 0
 }
 
 export const HALO = { maxGroups: 6, tasksPerGroup: 5 }
@@ -132,4 +130,65 @@ export function haloContent(groups: Group[], tasks: Task[], now: number): HaloGr
     .sort((a, b) => b.urgent - a.urgent || b.open.length - a.open.length || a.group.order - b.group.order)
     .slice(0, HALO.maxGroups)
     .map((r) => ({ group: r.group, tasks: r.open.slice(0, HALO.tasksPerGroup), more: Math.max(0, r.open.length - HALO.tasksPerGroup) }))
+}
+
+/* ------------------------------------------------------------------ *
+ * Orbital systems seen from the universe: every planet may show its own orbits and moons, within a
+ * budget that follows the graphics profile, the screen size and the distance of the camera.
+ * Only the drawing is limited: the data and the full planet view are never affected.
+ * ------------------------------------------------------------------ */
+
+const smooth = (x: number) => {
+  const t = Math.min(1, Math.max(0, x))
+  return t * t * (3 - 2 * t)
+}
+
+/** Level of detail (0..1) of a planet's orbits/moons from how big the planet looks on screen. */
+export function universeLod(args: { pxRadius: number; hovered: boolean; zoomFocus: boolean }): number {
+  const base = smooth((args.pxRadius - 9) / 17)
+  return args.hovered || args.zoomFocus ? Math.max(base, 0.7) : base
+}
+
+export interface UniverseBudget {
+  /** planets that may draw orbits and moons at the same time */
+  systems: number
+  /** moons drawn around one planet at full detail */
+  moons: number
+}
+
+export function universeBudget(tier: 'low' | 'medium' | 'high', viewportWidth: number): UniverseBudget {
+  const base = tier === 'low' ? { systems: 3, moons: 3 } : tier === 'medium' ? { systems: 6, moons: 5 } : { systems: 10, moons: 8 }
+  const room = viewportWidth < 900 ? 0.6 : viewportWidth >= 1700 ? 1.3 : 1
+  return { systems: Math.max(1, Math.round(base.systems * room)), moons: Math.max(2, Math.round(base.moons * room)) }
+}
+
+/** How strongly the moon of a given importance rank is drawn (0..1) at a level of detail. */
+export function moonWeight(lod: number, rank: number, maxMoons: number): number {
+  return Math.min(1, Math.max(0, lod * maxMoons + 0.5 - rank))
+}
+
+/** Radius of a moon orbit while the planet is seen from the universe (small enough not to touch neighbours). */
+export const universeRadius = (planetR: number, lane: number) => planetR * 1.45 + 0.7 + lane * 0.55
+
+/** Moon scale seen from the universe relative to the planet view. */
+export const UNIVERSE_MOON_SCALE = 0.45
+
+/**
+ * Groups ordered by how much they deserve a place among a limited number of moons: urgent work
+ * first, then the number of open tasks, then the user's own order.
+ */
+export function rankGroups(groups: Group[], tasks: Task[], now: number): Group[] {
+  const score = new Map<string, [number, number]>()
+  for (const g of groups) score.set(g.id, [0, 0])
+  for (const t of tasks) {
+    const sc = score.get(t.groupId)
+    if (!sc || t.status === 'done') continue
+    sc[1]++
+    if (urgencyOf(t, now) >= 2) sc[0]++
+  }
+  return [...groups].sort((a, b) => {
+    const x = score.get(a.id)!
+    const y = score.get(b.id)!
+    return y[0] - x[0] || y[1] - x[1] || a.order - b.order
+  })
 }

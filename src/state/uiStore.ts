@@ -83,6 +83,8 @@ export interface UiState {
   peekPlanetId: string | null
   /** planets (at most a few) whose halo is detailed enough to carry labels */
   haloPlanets: string[]
+  /** planets drawing their orbits and moons from the universe (a budgeted few) */
+  systemPlanets: string[]
   /** planets whose summary is at full detail (hovered / approached): their names are written */
   haloLabelPlanets: string[]
   /** the next navigation continues from the current camera pose instead of re-framing */
@@ -115,6 +117,7 @@ export const uiStore = createStore<UiState>({
   autoQuality: 'high',
   peekPlanetId: null,
   haloPlanets: [],
+  systemPlanets: [],
   haloLabelPlanets: [],
   cameraKeep: false,
   webglFailed: false,

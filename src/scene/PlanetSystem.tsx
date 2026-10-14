@@ -1,8 +1,8 @@
 import { useFrame, type ThreeEvent } from '@react-three/fiber'
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { AdditiveBlending, BufferAttribute, BufferGeometry, Color, Float32BufferAttribute, Group, IcosahedronGeometry, LineLoop, Mesh, MeshStandardMaterial, Points, PointsMaterial, ShaderMaterial, Vector3 } from 'three'
 import { layoutGroups, MOON_RADIUS, planetRadius, TAU, type MoonSlot } from '../domain/layout'
-import { groupReach, planetReach, rankTasks, satelliteCap } from '../domain/overview'
+import { groupReach, moonWeight, planetReach, rankGroups, rankTasks, satelliteCap, UNIVERSE_MOON_SCALE, universeBudget, universeRadius } from '../domain/overview'
 import { groupsOfPlanet, groupVisualKind, statsOf, tasksOfGroup, type Stats } from '../domain/stats'
 import { urgencyOf } from '../domain/time'
 import type { Group as GroupT, Planet, PlanetStyle, Task } from '../domain/types'
@@ -23,6 +23,7 @@ import { anchor, forgetAnchor, runtime, stepDt } from './runtime'
 import { orbitFragment, orbitVertex } from './shaders/misc'
 import { SatelliteSystem, STATUS_COLOR } from './Satellites'
 import { useQualityTier } from './useQuality'
+import { useViewportWidth } from './useViewport'
 import { Station } from './Station'
 
 const URGENCY_COLOR = ['#000000', '#ffd36b', '#ffa247', '#ff5a4a']
@@ -146,9 +147,25 @@ interface MoonProps {
   planetKey: string
   quality: QualityProfile
   index: number
+  /** importance rank among the planet's groups (decides which moons survive when space is short) */
+  rank: number
+  /** shared per-planet state: how open the system is and how much of it the universe view allows */
+  sys: SystemState
+  planetR: number
+  maxMoons: number
 }
 
-function MoonNode({ group, slot, stats, overflow, reach, planetKey, quality, index }: MoonProps) {
+/** Per-planet values written once a frame by the system and read by its moons and lanes. */
+interface SystemState {
+  /** 0 = compact, as seen from the universe; 1 = the planet's own view */
+  open: number
+  /** moons' visibility from the universe (level of detail) */
+  lod: number
+  /** weight each moon currently has (lets lanes follow their moons) */
+  moonW: Map<string, number>
+}
+
+function MoonNode({ group, slot, stats, overflow, reach, planetKey, quality, index, rank, sys, planetR, maxMoons }: MoonProps) {
   const root = useRef<Group>(null)
   const hit = useRef<Mesh>(null)
   const ctl = useMemo(() => makeCtl(), [])
@@ -168,8 +185,10 @@ function MoonNode({ group, slot, stats, overflow, reach, planetKey, quality, ind
     () => () => {
       forgetAnchor(key)
       runtime.moonFocus.delete(group.id)
+      runtime.moonOrbit.delete(group.id)
+      sys.moonW.delete(group.id)
     },
-    [key, group.id],
+    [key, group.id, sys],
   )
   usePickable(hit, key)
 
@@ -183,11 +202,17 @@ function MoonNode({ group, slot, stats, overflow, reach, planetKey, quality, ind
     const ui = uiStore.get()
     const level = levelOf(ui)
     const inGroup = ui.groupId === group.id
+    const mine = ui.planetId === group.planetId
     const peeking = !ui.planetId && ui.peekPlanetId === group.planetId
-    const wants = !ui.lab && (level === 'planet' || inGroup || peeking)
-    // while the planet is only being approached, the moons appear in step with the camera
-    const target = wants ? (peeking ? runtime.reveal : 1) : 0
-    o.presence = runtime.reducedMotion ? target : damp(o.presence, target, peeking ? 8 : wants ? 3 : 5, dt)
+    // seen from the universe the moon is as present as its rank and the level of detail allow;
+    // inside its planet every moon is shown, and inside a group only that one
+    let target = 0
+    if (!ui.lab) {
+      if (mine) target = level === 'planet' || inGroup ? 1 : 0
+      else if (!ui.planetId) target = Math.max(moonWeight(sys.lod, rank, maxMoons), peeking ? runtime.reveal : 0)
+    }
+    sys.moonW.set(group.id, target)
+    o.presence = runtime.reducedMotion ? target : damp(o.presence, target, peeking ? 8 : target > o.presence ? 3 : 5, dt)
     o.focus = runtime.reducedMotion ? (inGroup ? 1 : 0) : damp(o.focus, inGroup ? 1 : 0, 3.2, dt)
     runtime.moonFocus.set(group.id, o.focus)
 
@@ -197,14 +222,17 @@ function MoonNode({ group, slot, stats, overflow, reach, planetKey, quality, ind
       o.ready = true
     }
     o.angle = dampAngle(o.angle, tAngle, 5, dt)
-    o.radius = damp(o.radius, sl.radius, 4, dt)
+    // the orbit opens from its compact universe size to the planet view as the camera comes in
+    const wantR = universeRadius(planetR, sl.lane) + (sl.radius - universeRadius(planetR, sl.lane)) * sys.open
+    o.radius = damp(o.radius, wantR, 4, dt)
     const x = Math.cos(o.angle) * o.radius
     const z0 = Math.sin(o.angle) * o.radius
     tmp.set(x, -z0 * Math.sin(tilt), z0 * Math.cos(tilt)).add(center)
     g.position.copy(tmp)
     anchor(key).copy(tmp)
-    const sc = 1 + o.focus * 0.95
+    const sc = (UNIVERSE_MOON_SCALE + (1 - UNIVERSE_MOON_SCALE) * sys.open) * (1 + o.focus * 0.95)
     runtime.size.set(key, R * sc)
+    runtime.moonOrbit.set(group.id, { angle: o.angle, radius: o.radius, tilt, presence: o.presence })
     // arrival: moons condense from the planet's glow
     if (!o.born) o.born = performance.now()
     const age = (performance.now() - o.born) / 1000
@@ -261,26 +289,27 @@ function MoonNode({ group, slot, stats, overflow, reach, planetKey, quality, ind
       <mesh ref={hit} geometry={sphereGeo(12)} scale={R * 1.9} onPointerOver={(e) => (e.stopPropagation(), hover(true))} onPointerOut={() => hover(false)} onClick={onClick}>
         <meshBasicMaterial transparent opacity={0} depthWrite={false} colorWrite={false} />
       </mesh>
-      <MiniSats tasks={overflow} centerKey={key} radiusFn={() => Math.max(reach, R * 2.6) + 0.35} visibility={() => ctl.opacity * (1 - st.current.focus)} seed={style.seed} />
+      <MiniSats tasks={overflow} centerKey={key} radiusFn={() => Math.max(reach, R * 2.6) + 0.35} visibility={() => ctl.opacity * (1 - st.current.focus) * sys.open} seed={style.seed} />
     </group>
   )
 }
 
 /* ------------------------------------------------------------ moon lanes */
 
-function MoonLane({ radius, tilt, planetKey, presence }: { radius: number; tilt: number; planetKey: string; presence: { current: number } }) {
+function MoonLane({ lane, radius, tilt, planetKey, members, sys, planetR }: { lane: number; radius: number; tilt: number; planetKey: string; members: string[]; sys: SystemState; planetR: number }) {
   const ref = useRef<LineLoop>(null)
+  const op = useRef(0)
   const geo = useMemo(() => {
     const pts: number[] = []
     const n = 180
     for (let i = 0; i < n; i++) {
       const a = (i / n) * TAU
-      pts.push(Math.cos(a) * radius, 0, Math.sin(a) * radius)
+      pts.push(Math.cos(a), 0, Math.sin(a))
     }
     const g = new BufferGeometry()
     g.setAttribute('position', new Float32BufferAttribute(pts, 3))
     return g
-  }, [radius])
+  }, [])
   const mat = useMemo(
     () =>
       new ShaderMaterial({
@@ -300,82 +329,140 @@ function MoonLane({ radius, tilt, planetKey, presence }: { radius: number; tilt:
     },
     [geo, mat],
   )
-  useFrame(() => {
+  useFrame((_, dt) => {
     const c = runtime.pos.get(planetKey)
     const l = ref.current
     if (!c || !l) return
+    // an orbit is drawn as long as one of its moons is
+    let w = 0
+    for (const id of members) w = Math.max(w, sys.moonW.get(id) ?? 0)
+    op.current = runtime.reducedMotion ? w : damp(op.current, w, 5, stepDt(dt))
+    const r = universeRadius(planetR, lane) + (radius - universeRadius(planetR, lane)) * sys.open
     l.position.copy(c)
-    mat.uniforms.uOpacity!.value = 0.13 * presence.current
-    l.visible = presence.current > 0.02
+    l.scale.setScalar(r)
+    mat.uniforms.uOpacity!.value = 0.13 * op.current
+    l.visible = op.current > 0.02
   })
   return <lineLoop ref={ref} geometry={geo} material={mat} rotation={[tilt, 0, 0]} frustumCulled={false} renderOrder={-6} />
 }
 
 /* ------------------------------------------------------------- the layer */
 
+/**
+ * Orbits and moons of every planet that is big enough on screen (a budgeted few), plus the open one.
+ * The universe director decides who qualifies; the planet being approached or open always does.
+ */
 export function PlanetSystem({ quality }: { quality: QualityProfile }) {
-  // the open planet, or the one whose moons are being revealed (zooming in) / hidden (zooming out)
-  const planetId = useStore(uiStore, (s) => s.planetId ?? s.peekPlanetId)
-  const planet = useStore(dataStore, (s) => s.data.planets.find((p) => p.id === planetId) ?? null)
-  if (!planet) return null
-  return <PlanetSystemInner key={planet.id} planet={planet} quality={quality} />
+  const planets = useStore(dataStore, (s) => s.data.planets)
+  const listed = useStore(uiStore, (s) => s.systemPlanets)
+  const openId = useStore(uiStore, (s) => s.planetId)
+  const peekId = useStore(uiStore, (s) => s.peekPlanetId)
+  const ids = new Set(listed)
+  if (openId) ids.add(openId)
+  if (peekId) ids.add(peekId)
+  return (
+    <>
+      {planets
+        .filter((p) => ids.has(p.id))
+        .map((p) => (
+          <PlanetSystemInner key={p.id} planet={p} quality={quality} />
+        ))}
+    </>
+  )
 }
 
 function PlanetSystemInner({ planet, quality }: { planet: Planet; quality: QualityProfile }) {
   const allGroups = useStore(dataStore, (s) => s.data.groups)
   const allTasks = useStore(dataStore, (s) => s.data.tasks)
   const now = useStore(clockStore, (s) => s.now)
-  const lab = useStore(uiStore, (s) => s.lab !== null)
   const tier = useQualityTier()
+  const width = useViewportWidth()
+  // only the open planet (or the one being approached) draws tasks; the others show orbits and moons
+  const focusedNow = useStore(uiStore, (s) => s.planetId === planet.id || s.peekPlanetId === planet.id)
+  // leaving a planet: its extra moons and tasks stay mounted until the orbits have closed again
+  const [hold, setHold] = useState(focusedNow)
+  const focused = focusedNow || hold
   const planetKey = `p:${planet.id}`
+  const Rp = planetRadius(planet.style.size)
   const groups = useMemo(() => groupsOfPlanet(allGroups, planet.id), [allGroups, planet.id])
   const planetTasks = useMemo(() => allTasks.filter((t) => t.planetId === planet.id), [allTasks, planet.id])
   // each group may draw only so many satellites; the lanes of moons leave room for them
   const cap = satelliteCap(groups.length, tier)
   const reach = useMemo(() => planetReach(groups, planetTasks, cap), [groups, planetTasks, cap])
-  const layout = useMemo(() => layoutGroups(groups, planetRadius(planet.style.size), reach), [groups, planet.style.size, reach])
-  const presence = useRef({ current: 0 })
+  const layout = useMemo(() => layoutGroups(groups, Rp, reach), [groups, Rp, reach])
+  const { moons: maxMoons } = universeBudget(tier, width)
+  const ranked = useMemo(() => rankGroups(groups, planetTasks, now), [groups, planetTasks, now])
+  const rankOf = useMemo(() => new Map(ranked.map((g, i) => [g.id, i])), [ranked])
+  const sys = useMemo<SystemState>(() => ({ open: 0, lod: 0, moonW: new Map() }), [])
 
   useFrame((_, dt) => {
     const ui = uiStore.get()
-    // lanes follow the reveal while the planet is only being approached
-    const target = lab ? 0 : ui.planetId ? 1 : ui.peekPlanetId === planet.id ? runtime.reveal : 0
-    presence.current.current = runtime.reducedMotion ? target : damp(presence.current.current, target, 6, stepDt(dt))
+    const open = ui.lab ? 0 : ui.planetId === planet.id ? 1 : ui.peekPlanetId === planet.id && !ui.planetId ? runtime.reveal : 0
+    sys.open = runtime.reducedMotion ? open : damp(sys.open, open, open > sys.open ? 6 : 4, stepDt(dt))
+    sys.lod = runtime.lod.get(planet.id) ?? 0
+    if (focusedNow && !hold) setHold(true)
+    else if (!focusedNow && hold && sys.open < 0.03) setHold(false)
   })
 
-  const laneSet = useMemo(() => {
-    const lanes = new Map<number, number>()
-    for (const s of layout.slots.values()) lanes.set(s.lane, s.radius)
-    return [...lanes.entries()]
-  }, [layout])
+  // from the universe only the most important moons are mounted; the planet view mounts them all
+  const shown = focused ? groups : ranked.slice(0, maxMoons)
+  const shownIds = useMemo(() => new Set(shown.map((g) => g.id)), [shown])
+  const lanes = useMemo(() => {
+    const m = new Map<number, { radius: number; members: string[] }>()
+    for (const g of shown) {
+      const sl = layout.slots.get(g.id)
+      if (!sl) continue
+      const e = m.get(sl.lane) ?? { radius: sl.radius, members: [] }
+      e.members.push(g.id)
+      m.set(sl.lane, e)
+    }
+    return [...m.entries()]
+  }, [shown, layout])
 
   const perGroup = useMemo(() => {
     const m = new Map<string, { tasks: Task[]; stats: Stats; overflow: Task[]; reach: number }>()
     for (const g of groups) {
       const tasks = tasksOfGroup(allTasks, g.id)
-      const ranked = rankTasks(tasks, now)
-      m.set(g.id, { tasks, stats: statsOf(tasks, now), overflow: ranked.slice(cap, cap + 14), reach: groupReach(ranked.slice(0, cap)) })
+      const rk = rankTasks(tasks, now)
+      m.set(g.id, { tasks, stats: statsOf(tasks, now), overflow: rk.slice(cap, cap + 14), reach: groupReach(rk.slice(0, cap)) })
     }
     return m
   }, [groups, allTasks, now, cap])
 
   return (
     <group>
-      {laneSet.map(([lane, radius]) => (
-        <MoonLane key={lane} radius={radius} tilt={MOON_TILT[lane % MOON_TILT.length]!} planetKey={planetKey} presence={presence.current} />
+      {lanes.map(([lane, e]) => (
+        <MoonLane key={lane} lane={lane} radius={e.radius} tilt={MOON_TILT[lane % MOON_TILT.length]!} planetKey={planetKey} members={e.members} sys={sys} planetR={Rp} />
       ))}
       {groups.map((g, i) => {
         const slot = layout.slots.get(g.id)
         const info = perGroup.get(g.id)
-        if (!slot || !info) return null
-        return <MoonNode key={g.id} group={g} slot={slot} stats={info.stats} overflow={info.overflow} reach={info.reach} planetKey={planetKey} quality={quality} index={i} />
+        if (!slot || !info || !shownIds.has(g.id)) return null
+        return (
+          <MoonNode
+            key={g.id}
+            group={g}
+            slot={slot}
+            stats={info.stats}
+            overflow={info.overflow}
+            reach={info.reach}
+            planetKey={planetKey}
+            quality={quality}
+            index={i}
+            rank={rankOf.get(g.id) ?? i}
+            sys={sys}
+            planetR={Rp}
+            maxMoons={maxMoons}
+          />
+        )
       })}
       {/* every group shows its own tasks at once; focusing a group only opens them up */}
-      {groups.map((g) => {
-        const info = perGroup.get(g.id)
-        if (!info || info.tasks.length === 0) return null
-        return <SatelliteSystem key={g.id} group={g} tasks={info.tasks} quality={quality} centerKey={`g:${g.id}`} cap={cap} />
-      })}
+      {focused &&
+        groups.map((g) => {
+          const info = perGroup.get(g.id)
+          if (!info || info.tasks.length === 0) return null
+          return <SatelliteSystem key={g.id} group={g} tasks={info.tasks} quality={quality} centerKey={`g:${g.id}`} cap={cap} />
+        })}
     </group>
   )
 }
